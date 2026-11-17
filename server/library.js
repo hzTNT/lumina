@@ -1321,6 +1321,19 @@ export class Library {
       }
     }
 
+    // Wide cards (continue watching) look better with fanart than a video frame.
+    if (type === 'thumb') {
+      const seriesOwner = target?.kind === 'episode' ? this.series.get(target.seriesId) : null;
+      const wideFallback = metaOwner?._metaBackdrop
+        || (target ? target._backdrop : null)
+        || seriesOwner?._backdrop
+        || series?._backdrop
+        || metaOwner?._metaPoster;
+      if (wideFallback && fs.existsSync(wideFallback)) {
+        return { file: wideFallback, source: true };
+      }
+    }
+
     if (!this.tools.available) return null;
 
     const out = path.join(this.artDir, `${id}-${type}.jpg`);

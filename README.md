@@ -24,6 +24,18 @@
 - **生日祝福**：注册时填写出生日期，生日当天登录会在首页收到一条可关闭的祝福横幅。
 - **在线元数据与字幕**：管理员可在详情页联网搜索标题、简介、封面，或从 MySubs 搜索并下载字幕；支持豆瓣、TVMaze、维基百科和可选 TMDB。
 
+## 界面预览
+
+| 首页 | 电影库 |
+| --- | --- |
+| ![首页](docs/screenshots/home.png) | ![电影库](docs/screenshots/movies.png) |
+
+| 详情页 | 播放器 |
+| --- | --- |
+| ![详情页](docs/screenshots/detail.png) | ![播放器](docs/screenshots/player.png) |
+
+> 截图使用测试媒体库，账号名称与路径已做隐藏/泛化处理。更多使用体验记录和改进建议见 [docs/UI-REVIEW.md](docs/UI-REVIEW.md)。
+
 ## 快速开始
 
 1. 双击 `start.bat`（如果服务已经在运行，它会直接打开浏览器，不会重复启动）。

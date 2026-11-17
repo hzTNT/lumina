@@ -21,6 +21,7 @@
 - **独立观看进度**：每个账号保存自己的续播位置，换账号不会互相覆盖。
 - **个人资料**：所有账号都能修改显示名称和头像；成员修改出生日期需要管理员确认，避免绕过年龄限制。
 - **生日祝福**：注册时填写出生日期，生日当天登录会在首页收到一条可关闭的祝福横幅。
+- **在线元数据与字幕**：管理员可在详情页联网搜索标题、简介、封面，或从 MySubs 搜索并下载字幕；可选配置 TMDB API Key 获得更完整的中文海报。
 
 ## 快速开始
 
@@ -78,6 +79,19 @@
 
 收藏数据保存在 `data/favorites.json`，按账号隔离。账号的媒体库权限或年龄范围变化后，不可见的收藏会自动从列表隐藏；重新可见时会再次出现。
 
+## 在线元数据与字幕
+
+这两项功能需要服务器能访问外网，并且只有管理员可以操作。
+
+- **匹配元数据**：进入电影/剧集详情页，点 **匹配元数据**，按片名和年份搜索。选中候选后会应用标题、年份、简介与封面；剧集标题会同步到所有集。
+  - 默认优先使用 **TMDB**（需要 API Key），搜索不到时回退到 **中文维基百科**。
+  - 在 **设置 → 网络元数据** 中填入 TMDB API Key，可选择仅维基百科或仅 TMDB。
+  - 下载的封面保存在 `data/meta-art/`，元数据覆盖记录在 `data/metadata.json`；重新扫描不会丢失。
+- **在线字幕**：在电影详情页点 **在线字幕**，或在剧集每集右侧点字幕按钮；选择语言后从 **MySubs** 下载 SRT，保存为视频同目录的 `.zh.srt` / `.en.srt`，播放器会自动识别。
+  - 字幕源不需要 Key，但有限流；找不到字幕时可以换语言或多试几个片名。
+- **网络要求**：如果提示“无法连接在线服务”，请检查这台电脑的网络、代理或防火墙。TMDB 和维基百科在部分网络环境下可能无法直接访问。
+- **权限**：元数据和字幕接口仅管理员可用；下载封面/字幕时仍会校验目标影片的媒体库与年龄权限。
+
 ## 目录结构
 
 ```
@@ -91,6 +105,7 @@ lumina/
 │  ├─ library.js          扫描、媒体库、播放信息、HLS 分片、分级过滤
 │  ├─ users.js            账号、密码、会话、角色与年龄规则
 │  ├─ ratings.js          年龄分级解析与标签识别
+│  ├─ metadata.js         TMDB / 维基百科 / MySubs 在线资源
 │  ├─ ffmpeg.js           ffprobe / ffmpeg 封装
 │  ├─ subtitles.js        字幕发现与 WebVTT 转换
 │  ├─ config.js           配置读写
@@ -146,6 +161,12 @@ HLS 分片会缓存在 `data/transcode/`，重复观看同一段不会重复转�
   ],
   "scanOnStart": true,
   "scanIntervalMinutes": 30,
+  "metadata": {
+    "provider": "auto",
+    "tmdbApiKey": "",
+    "language": "zh",
+    "subtitleLanguage": "zh"
+  },
   "transcode": {
     "enabled": true,
     "maxHeight": 1080,
@@ -158,10 +179,11 @@ HLS 分片会缓存在 `data/transcode/`，重复观看同一段不会重复转�
 
 - `host` 保持 `0.0.0.0` 才能被局域网其他设备访问。
 - `libraries` 是媒体库列表；`access` 为 `all` / `selected` / `admins`，`userIds` 在 `selected` 时生效，`minAge` 为成员最低年龄。
+- `metadata.provider` 为 `auto` / `tmdb` / `wikipedia`；`tmdbApiKey` 可留空，此时使用维基百科。Key 以明文保存在本机 `config.json`，不要提交到公开仓库。
 - `maxHeight` 控制转码最高分辨率；低性能机器可改为 `720`。
 - 修改 `port` 后记得同步防火墙规则。
 
-账号保存在 `data/users.json`，手动分级保存在 `data/ratings.json`，观看进度保存在 `data/progress.json`。备份或迁移时连同 `data/` 一起复制即可；删除 `data/users.json` 会回到首次创建管理员的流程。
+账号保存在 `data/users.json`，会话在 `data/sessions.json`，手动分级在 `data/ratings.json`，观看进度在 `data/progress.json`，收藏在 `data/favorites.json`，在线元数据在 `data/metadata.json`，头像和匹配封面分别在 `data/avatars/`、`data/meta-art/`。备份或迁移时连同 `data/` 一起复制即可；删除 `data/users.json` 会回到首次创建管理员的流程。
 
 ## 常见问题
 

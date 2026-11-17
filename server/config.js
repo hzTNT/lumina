@@ -26,6 +26,12 @@ export const DEFAULTS = {
     crf: 23,
     preset: 'veryfast',
   },
+  metadata: {
+    provider: 'auto',
+    tmdbApiKey: '',
+    language: 'zh',
+    subtitleLanguage: 'zh',
+  },
   ffmpegPath: '',
   ffprobePath: '',
 };
@@ -120,6 +126,18 @@ export function libraryPathForConfig(absPath) {
     : absPath;
 }
 
+function normalizeMetadata(input = {}) {
+  const provider = ['auto', 'tmdb', 'wikipedia'].includes(input.provider) ? input.provider : 'auto';
+  const language = input.language === 'en' ? 'en' : 'zh';
+  const subtitleLanguage = String(input.subtitleLanguage || 'zh').trim().slice(0, 12) || 'zh';
+  return {
+    provider,
+    tmdbApiKey: String(input.tmdbApiKey || '').trim(),
+    language,
+    subtitleLanguage,
+  };
+}
+
 export function loadConfig() {
   let raw = {};
   if (fs.existsSync(CONFIG_PATH)) {
@@ -149,6 +167,7 @@ export function loadConfig() {
   const hadLibraries = Array.isArray(raw.libraries);
   cfg.libraries = normalizeLibraries(raw.libraries, cfg.mediaDirs);
   cfg.mediaDirs = cfg.libraries.filter((library) => library.enabled).map((library) => library.path);
+  cfg.metadata = normalizeMetadata(cfg.metadata);
   cfg.port = Number(cfg.port) || 8096;
   cfg.host = cfg.host || '0.0.0.0';
   cfg.ffmpegResolved = resolveBinary('ffmpeg', cfg.ffmpegPath);
@@ -185,6 +204,12 @@ export function persistConfig(cfg) {
     scanOnStart: cfg.scanOnStart,
     scanIntervalMinutes: cfg.scanIntervalMinutes,
     language: cfg.language,
+    metadata: {
+      provider: cfg.metadata?.provider || 'auto',
+      tmdbApiKey: cfg.metadata?.tmdbApiKey || '',
+      language: cfg.metadata?.language || 'zh',
+      subtitleLanguage: cfg.metadata?.subtitleLanguage || 'zh',
+    },
     transcode: cfg.transcode,
     ffmpegPath: cfg.ffmpegPath || '',
     ffprobePath: cfg.ffprobePath || '',

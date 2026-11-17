@@ -221,6 +221,7 @@ function continueEntries() {
 }
 
 function describe(item) {
+  if (item.overview) return item.overview;
   if (item.kind === 'series') {
     return `${item.seasonCount} 季 ${item.episodeCount} 集已收入片库，支持分季浏览、自动连播与字幕。`;
   }
@@ -518,6 +519,8 @@ function renderMovieDetail(id) {
           <button class="btn btn-primary" data-play="${item.id}">${icon('play', 'fill')}${resume ? '继续观看' : '立即播放'}</button>
           ${resume ? `<button class="btn btn-ghost" data-action="restart" data-id="${item.id}">${icon('replay')}从头播放</button>` : ''}
           ${favoriteActionButton('movie', item.id)}
+          ${isAdmin() ? `<button class="btn btn-ghost" data-action="open-metadata" data-kind="movie" data-id="${item.id}">${icon('spark')}匹配元数据</button>
+          <button class="btn btn-ghost" data-action="open-subtitles" data-id="${item.id}">${icon('subtitles')}在线字幕</button>` : ''}
           <a class="btn btn-ghost" href="#/movies">${icon('arrow-left')}返回电影</a>
         </div>
       </div>
@@ -551,6 +554,7 @@ function episodeRow(ep) {
       <h3>${esc(ep.title)}</h3>
       <p>${formatDuration(ep.duration)} · ${formatBytes(ep.size)}${watched ? ` · ${watched}` : ''}</p>
     </div>
+    ${isAdmin() ? `<button class="ep-online" data-action="open-subtitles" data-id="${ep.id}" title="在线字幕" aria-label="在线字幕">${icon('subtitles')}</button>` : ''}
     <span class="ep-play">${icon('play', 'fill')}</span>
   </div>`;
 }
@@ -601,6 +605,7 @@ function renderSeriesDetail(id) {
           ${target ? `<button class="btn btn-primary" data-play="${target.id}">${icon('play', 'fill')}${resume ? `继续观看 ${episodeCode(target.season, target.episode)}` : '播放第一集'}</button>` : ''}
           ${resume && episodes[0] ? `<button class="btn btn-ghost" data-play="${episodes[0].id}">${icon('replay')}从第一集开始</button>` : ''}
           ${favoriteActionButton('series', series.id)}
+          ${isAdmin() ? `<button class="btn btn-ghost" data-action="open-metadata" data-kind="series" data-id="${series.id}">${icon('spark')}匹配元数据</button>` : ''}
           <a class="btn btn-ghost" href="#/series">${icon('arrow-left')}返回剧集</a>
         </div>
       </div>
@@ -711,6 +716,39 @@ function userManagementPanel() {
   </div>`;
 }
 
+function metadataSettingsPanel() {
+  const md = state.settings?.metadata || {};
+  const hasKey = Boolean(md.hasTmdbKey);
+  return `<div class="panel">
+    <h2>${icon('search')}网络元数据</h2>
+    <p class="hint">按片名联网搜索标题、简介和封面。未配置 TMDB Key 时使用维基百科，中文简介可用但封面覆盖有限；字幕来自 MySubs。</p>
+    <div class="field-row">
+      <label class="field-label">元数据来源
+        <select class="field" id="metadata-provider">
+          <option value="auto" ${md.provider === 'auto' ? 'selected' : ''}>自动（优先 TMDB）</option>
+          <option value="wikipedia" ${md.provider === 'wikipedia' ? 'selected' : ''}>仅维基百科</option>
+          <option value="tmdb" ${md.provider === 'tmdb' ? 'selected' : ''}>仅 TMDB</option>
+        </select>
+      </label>
+      <label class="field-label">字幕语言
+        <select class="field" id="metadata-subtitle-language">
+          <option value="zh" ${md.subtitleLanguage === 'zh' ? 'selected' : ''}>中文</option>
+          <option value="en" ${md.subtitleLanguage === 'en' ? 'selected' : ''}>English</option>
+        </select>
+      </label>
+    </div>
+    <label class="field-label">TMDB API Key
+      <input class="field" id="metadata-tmdb-key" type="password" autocomplete="off"
+        placeholder="${hasKey ? '已配置，留空保持不变' : '可选，填入后可使用中文海报'}">
+    </label>
+    <div class="settings-actions">
+      <button class="btn btn-primary btn-sm" data-action="save-metadata-settings">${icon('check')}保存</button>
+      ${hasKey ? `<button class="btn btn-ghost btn-sm" data-action="clear-tmdb-key">${icon('trash')}清除 Key</button>` : ''}
+      <span class="badge ${hasKey ? 'good' : 'warn'}">${hasKey ? 'TMDB 已配置' : '未配置 TMDB'}</span>
+    </div>
+  </div>`;
+}
+
 function renderSettings() {
   const settings = state.settings;
   if (!settings) return errorView('无法加载设置，请确认服务正在运行。');
@@ -782,6 +820,7 @@ function renderSettings() {
           ${settingsDirty ? '<span class="badge warn">有未保存的修改</span>' : ''}
         </div>
       </div>
+      ${metadataSettingsPanel()}
       <div class="panel">
         <h2>${icon('grid')}片库概览</h2>
         <div class="status-list">
@@ -1601,6 +1640,256 @@ async function applyRating(select) {
   }
 }
 
+let metadataContext = null;
+let metadataResults = [];
+let subtitleContext = null;
+let subtitleResults = [];
+
+function closeDialogs() {
+  document.getElementById('metadata-modal')?.remove();
+  document.getElementById('subtitle-modal')?.remove();
+  metadataContext = null;
+  subtitleContext = null;
+  document.body.classList.remove('modal-open');
+}
+
+function dialogShell(id, title, body) {
+  document.getElementById(id)?.remove();
+  const wrap = document.createElement('div');
+  wrap.id = id;
+  wrap.className = 'modal-backdrop';
+  wrap.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-label="${esc(title)}">
+    <div class="modal-head">
+      <div><span class="modal-kicker">在线资源</span><h2>${esc(title)}</h2></div>
+      <button class="icon-btn" type="button" data-close-dialog aria-label="关闭">${icon('close')}</button>
+    </div>
+    ${body}
+  </div>`;
+  document.body.append(wrap);
+  document.body.classList.add('modal-open');
+  return wrap;
+}
+
+async function openMetadataDialog(kind, id) {
+  const entity = kind === 'series' ? state.seriesById.get(id) : state.moviesById.get(id);
+  if (!entity) return;
+  metadataContext = { kind, id, query: entity.title, year: entity.year };
+  const body = `<form class="dialog-search" id="metadata-search-form">
+      <input class="field" id="metadata-query" value="${esc(entity.title)}" placeholder="片名" aria-label="片名">
+      <input class="field dialog-year" id="metadata-year" value="${entity.year || ''}" inputmode="numeric" placeholder="年份" aria-label="年份">
+      <button class="btn btn-primary" type="submit">${icon('search')}搜索</button>
+    </form>
+    <p class="hint" id="metadata-source-note">正在搜索…</p>
+    <div class="metadata-results" id="metadata-results"></div>`;
+  const wrap = dialogShell('metadata-modal', `匹配元数据 · ${entity.title}`, body);
+  wrap.addEventListener('click', (event) => {
+    if (event.target.closest('[data-close-dialog]') || event.target === wrap) closeDialogs();
+    const apply = event.target.closest('[data-apply-metadata]');
+    if (apply) applyMetadataResult(Number(apply.dataset.applyMetadata));
+  });
+  wrap.querySelector('#metadata-search-form').addEventListener('submit', (event) => {
+    event.preventDefault();
+    searchMetadataModal();
+  });
+  searchMetadataModal();
+}
+
+async function searchMetadataModal() {
+  if (!metadataContext) return;
+  const results = document.getElementById('metadata-results');
+  const note = document.getElementById('metadata-source-note');
+  if (!results) return;
+  const q = document.getElementById('metadata-query').value.trim();
+  const year = document.getElementById('metadata-year').value.trim();
+  if (!q) {
+    note.textContent = '请输入片名。';
+    return;
+  }
+  results.innerHTML = `<div class="dialog-loading">${icon('spark')}正在联网搜索…</div>`;
+  note.textContent = '正在搜索…';
+  try {
+    const params = new URLSearchParams({ kind: metadataContext.kind, q });
+    if (year) params.set('year', year);
+    const data = await api(`/api/metadata/search?${params}`);
+    metadataResults = data.results || [];
+    note.textContent = metadataResults.length
+      ? `来源：${data.source === 'tmdb' ? 'TMDB' : '维基百科'} · ${metadataResults.length} 个候选`
+      : '没有找到候选。可以换个片名，或在设置中配置 TMDB Key。';
+    if (!metadataResults.length) {
+      results.innerHTML = `<div class="empty compact"><p class="empty-title">没有匹配结果</p><p>换个片名或年份再试。</p></div>`;
+      return;
+    }
+    results.innerHTML = metadataResults.map((item, index) => `<article class="metadata-result">
+      <div class="metadata-poster">${item.posterUrl ? `<img src="${esc(item.posterUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : `<span>${icon('film')}</span>`}</div>
+      <div class="metadata-info">
+        <h3>${esc(item.title)}</h3>
+        <p class="metadata-meta">${item.year ? `${item.year} 年 · ` : ''}${data.source === 'tmdb' ? 'TMDB' : '维基百科'}</p>
+        <p class="metadata-overview">${esc(item.overview || '暂无简介')}</p>
+      </div>
+      <button class="btn btn-primary btn-sm" data-apply-metadata="${index}">应用</button>
+    </article>`).join('');
+  } catch (err) {
+    note.textContent = err.message || '搜索失败';
+    results.innerHTML = '';
+  }
+}
+
+async function applyMetadataResult(index) {
+  const item = metadataResults[index];
+  if (!item || !metadataContext) return;
+  const button = document.querySelector(`[data-apply-metadata="${index}"]`);
+  if (button) {
+    button.disabled = true;
+    button.textContent = '应用中…';
+  }
+  try {
+    const result = await api('/api/metadata/apply', {
+      method: 'POST',
+      body: JSON.stringify({
+        kind: metadataContext.kind,
+        id: metadataContext.id,
+        title: item.title,
+        year: item.year,
+        overview: item.overview,
+        posterUrl: item.posterUrl,
+        backdropUrl: item.backdropUrl,
+        source: item.provider,
+        externalId: item.externalId,
+      }),
+    });
+    closeDialogs();
+    const library = await api('/api/library');
+    applyLibrary(library);
+    await renderRoute({ scroll: false });
+    showToast(result.warning ? `元数据已应用，但封面下载失败：${result.warning}` : '元数据已应用');
+  } catch (err) {
+    showToast(err.message || '应用失败', 'error');
+    if (button) {
+      button.disabled = false;
+      button.textContent = '应用';
+    }
+  }
+}
+
+async function openSubtitleDialog(itemId) {
+  const item = state.episodesById.get(itemId) || state.moviesById.get(itemId);
+  if (!item) return;
+  const label = item.seriesTitle
+    ? `${item.seriesTitle} · ${episodeCode(item.season, item.episode)}`
+    : item.title;
+  subtitleContext = { itemId, label };
+  const lang = state.settings?.metadata?.subtitleLanguage || 'zh';
+  const body = `<div class="dialog-inline">
+      <span class="hint">为「${esc(label)}」搜索字幕</span>
+      <select class="field select-sm" id="subtitle-language">
+        <option value="zh" ${lang === 'zh' ? 'selected' : ''}>中文</option>
+        <option value="en" ${lang === 'en' ? 'selected' : ''}>English</option>
+      </select>
+    </div>
+    <p class="hint" id="subtitle-note">正在搜索…</p>
+    <div class="subtitle-results" id="subtitle-results"></div>`;
+  const wrap = dialogShell('subtitle-modal', '在线字幕', body);
+  wrap.addEventListener('click', (event) => {
+    if (event.target.closest('[data-close-dialog]') || event.target === wrap) closeDialogs();
+    const download = event.target.closest('[data-download-subtitle]');
+    if (download) downloadSubtitleResult(Number(download.dataset.downloadSubtitle));
+  });
+  wrap.querySelector('#subtitle-language').addEventListener('change', loadSubtitleResults);
+  loadSubtitleResults();
+}
+
+async function loadSubtitleResults() {
+  if (!subtitleContext) return;
+  const results = document.getElementById('subtitle-results');
+  const note = document.getElementById('subtitle-note');
+  if (!results) return;
+  const lang = document.getElementById('subtitle-language').value;
+  results.innerHTML = `<div class="dialog-loading">${icon('subtitles')}正在搜索字幕…</div>`;
+  note.textContent = '正在搜索…';
+  try {
+    const params = new URLSearchParams({ itemId: subtitleContext.itemId, lang });
+    const data = await api(`/api/metadata/subtitles?${params}`);
+    subtitleResults = data.results || [];
+    note.textContent = data.results?.length
+      ? `来自 MySubs · ${data.results.length} 条候选`
+      : '没有找到字幕，可以换个语言再试。';
+    if (!subtitleResults.length) {
+      results.innerHTML = `<div class="empty compact"><p class="empty-title">没有找到字幕</p><p>数据源覆盖有限，请换个语言或稍后再试。</p></div>`;
+      return;
+    }
+    results.innerHTML = subtitleResults.map((item, index) => `<article class="subtitle-result">
+      <div><strong>${esc(item.label || item.lang)}</strong>
+        <p>${item.format || 'SRT'}${item.downloads ? ` · ${item.downloads} 次下载` : ''}${item.season ? ` · S${String(item.season).padStart(2, '0')}E${String(item.episode || 0).padStart(2, '0')}` : ''}</p>
+      </div>
+      <button class="btn btn-ghost btn-sm" data-download-subtitle="${index}">${icon('subtitles')}下载</button>
+    </article>`).join('');
+  } catch (err) {
+    note.textContent = err.message || '字幕搜索失败';
+    results.innerHTML = '';
+  }
+}
+
+async function downloadSubtitleResult(index) {
+  const item = subtitleResults[index];
+  if (!item || !subtitleContext) return;
+  const button = document.querySelector(`[data-download-subtitle="${index}"]`);
+  if (button) {
+    button.disabled = true;
+    button.textContent = '下载中…';
+  }
+  try {
+    await api('/api/metadata/subtitles', {
+      method: 'POST',
+      body: JSON.stringify({
+        itemId: subtitleContext.itemId,
+        subtitleId: item.id,
+        lang: document.getElementById('subtitle-language')?.value || 'zh',
+      }),
+    });
+    closeDialogs();
+    const library = await api('/api/library');
+    applyLibrary(library);
+    await renderRoute({ scroll: false });
+    showToast('字幕已下载，重新打开播放器即可选择');
+  } catch (err) {
+    showToast(err.message || '字幕下载失败', 'error');
+    if (button) {
+      button.disabled = false;
+      button.textContent = '下载';
+    }
+  }
+}
+
+async function saveMetadataSettings() {
+  const provider = document.getElementById('metadata-provider')?.value;
+  const subtitleLanguage = document.getElementById('metadata-subtitle-language')?.value;
+  const keyInput = document.getElementById('metadata-tmdb-key');
+  const body = { provider, language: 'zh', subtitleLanguage };
+  if (keyInput?.value.trim()) body.tmdbApiKey = keyInput.value.trim();
+  try {
+    const result = await api('/api/settings/metadata', { method: 'POST', body: JSON.stringify(body) });
+    state.settings = { ...(state.settings || {}), metadata: result.metadata };
+    showToast('网络元数据设置已保存');
+    renderRoute({ scroll: false });
+  } catch (err) {
+    showToast(err.message || '保存失败', 'error');
+  }
+}
+
+async function clearTmdbKey() {
+  try {
+    const result = await api('/api/settings/metadata', {
+      method: 'POST',
+      body: JSON.stringify({ provider: state.settings?.metadata?.provider || 'auto', clearTmdbKey: true }),
+    });
+    state.settings = { ...(state.settings || {}), metadata: result.metadata };
+    showToast('TMDB Key 已清除');
+    renderRoute({ scroll: false });
+  } catch (err) {
+    showToast(err.message || '清除失败', 'error');
+  }
+}
+
 async function handleAction(element) {
   const action = element.dataset.action;
   if (action === 'scan') return triggerScan();
@@ -1629,6 +1918,10 @@ async function handleAction(element) {
   if (action === 'delete-user') return deleteUser(element.dataset.id);
   if (action === 'reset-user-password') return resetUserPassword(element.dataset.id);
   if (action === 'create-user') return createUserFromForm();
+  if (action === 'open-metadata') return openMetadataDialog(element.dataset.kind, element.dataset.id);
+  if (action === 'open-subtitles') return openSubtitleDialog(element.dataset.id);
+  if (action === 'save-metadata-settings') return saveMetadataSettings();
+  if (action === 'clear-tmdb-key') return clearTmdbKey();
   if (action === 'add-library') return addLibrary();
   if (action === 'remove-library') return removeLibrary(Number(element.dataset.index));
   if (action === 'save-libraries') return saveLibraries();
@@ -2127,6 +2420,10 @@ function bindEvents() {
   });
 
   document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && (metadataContext || subtitleContext)) {
+      closeDialogs();
+      return;
+    }
     if (event.key === 'Escape' && !accountMenu.hidden) {
       closeAccountMenu();
       return;

@@ -60,9 +60,11 @@ export class Library {
     this.libraryFile = path.join(dataDir, 'library.json');
     this.progressFile = path.join(dataDir, 'progress.json');
     this.favoritesFile = path.join(dataDir, 'favorites.json');
+    this.metadataFile = path.join(dataDir, 'metadata.json');
     this.ratingsFile = path.join(dataDir, 'ratings.json');
     this.probeFile = path.join(dataDir, 'probe.json');
     this.artDir = path.join(dataDir, 'art');
+    this.metadataDir = path.join(dataDir, 'meta-art');
     this.subsDir = path.join(dataDir, 'subs');
     this.transcodeDir = path.join(dataDir, 'transcode');
 
@@ -73,6 +75,12 @@ export class Library {
     this.favorites = favoriteData && typeof favoriteData === 'object' && favoriteData.users && typeof favoriteData.users === 'object'
       ? favoriteData.users
       : {};
+    const metaData = readJson(this.metadataFile, { version: 1, items: {}, series: {} });
+    this.metadata = {
+      version: 1,
+      items: metaData?.items && typeof metaData.items === 'object' ? metaData.items : {},
+      series: metaData?.series && typeof metaData.series === 'object' ? metaData.series : {},
+    };
     this.ratingOverrides = readJson(this.ratingsFile, { items: {}, series: {} });
     if (!this.ratingOverrides || typeof this.ratingOverrides !== 'object') this.ratingOverrides = { items: {}, series: {} };
     if (!this.ratingOverrides.items) this.ratingOverrides.items = {};
@@ -513,6 +521,7 @@ export class Library {
 
     this.items = newItems;
     this.series = seriesInfo;
+    this.applyStoredMetadata();
     this.payloadCache = null;
   }
 
@@ -661,11 +670,13 @@ export class Library {
       ageRating: item.ageRating ?? null,
       ageLabel: ratingLabel(item.ageRating),
       ratingSource: item.ratingSource || 'auto',
+      overview: item.overview || '',
+      metadataSource: item.metadataSource || null,
       subtitleCount: tracks.length,
       hasProbe: Boolean(probe),
-      poster: `/api/art/${item.id}?type=poster&v=${item.mtime}`,
-      backdrop: `/api/art/${item.id}?type=backdrop&v=${item.mtime}`,
-      thumb: `/api/art/${item.id}?type=thumb&v=${item.mtime}`,
+      poster: `/api/art/${item.id}?type=poster&v=${item.mtime}-${item._metaVersion || 0}`,
+      backdrop: `/api/art/${item.id}?type=backdrop&v=${item.mtime}-${item._metaVersion || 0}`,
+      thumb: `/api/art/${item.id}?type=thumb&v=${item.mtime}-${item._metaVersion || 0}`,
     };
   }
 
@@ -685,13 +696,15 @@ export class Library {
       ageRating: series.ageRating ?? null,
       ageLabel: ratingLabel(series.ageRating),
       ratingSource: series.ratingSource || 'auto',
+      overview: series.overview || '',
+      metadataSource: series.metadataSource || null,
       episodeCount: eps.length,
       seasonCount: new Set(eps.map((ep) => ep.season)).size,
       mtime: series.mtime,
       addedAt: series.addedAt || (series.mtime ? new Date(series.mtime).toISOString() : null),
       duration: Math.max(0, ...eps.map((ep) => ep.duration || 0)),
-      poster: `/api/art/${series.id}?type=poster&v=${series.mtime}`,
-      backdrop: `/api/art/${series.id}?type=backdrop&v=${series.mtime}`,
+      poster: `/api/art/${series.id}?type=poster&v=${series.mtime}-${series._metaVersion || 0}`,
+      backdrop: `/api/art/${series.id}?type=backdrop&v=${series.mtime}-${series._metaVersion || 0}`,
       episodes: eps.map((ep) => this.clientItem(ep)),
     };
   }
@@ -900,6 +913,113 @@ export class Library {
     delete this.favorites[userId];
     this.saveFavorites();
     return true;
+  }
+
+  // ------------------------------------------------------------------ metadata
+
+  metadataFor(kind, id) {
+    const bucket = kind === 'series' ? this.metadata.series : this.metadata.items;
+    return bucket[id] || null;
+  }
+
+  saveMetadata() {
+    writeJsonAtomic(this.metadataFile, { version: 1, ...this.metadata });
+  }
+
+  metadataPath(rel) {
+    if (!rel || typeof rel !== 'string') return null;
+    if (path.isAbsolute(rel)) return null;
+    const abs = path.resolve(this.dataDir, rel);
+    const base = path.resolve(this.dataDir);
+    if (abs !== base && !abs.startsWith(`${base}${path.sep}`)) return null;
+    return fs.existsSync(abs) ? abs : null;
+  }
+
+  applyMetadataRecord(entity, record) {
+    const kind = entity.kind === 'series' ? 'series' : 'movie';
+    const poster = this.metadataPath(record.posterPath);
+    const backdrop = this.metadataPath(record.backdropPath);
+    entity.overview = String(record.overview || '').slice(0, 4000);
+    if (record.year != null) entity.year = Number(record.year) || null;
+    entity.metadataSource = record.source || 'manual';
+    entity._metaVersion = Number(record.updatedAt) || 0;
+    entity._metaPoster = poster;
+    entity._metaBackdrop = backdrop;
+    if (kind === 'series') {
+      if (record.title) entity.title = String(record.title).slice(0, 200);
+      for (const id of entity.episodeIds || []) {
+        const ep = this.items.get(id);
+        if (ep) {
+          ep.seriesTitle = entity.title;
+          ep._metaVersion = entity._metaVersion;
+        }
+      }
+    } else {
+      if (record.title) entity.title = String(record.title).slice(0, 200);
+    }
+  }
+
+  applyStoredMetadata() {
+    for (const [id, record] of Object.entries(this.metadata.items)) {
+      const item = this.items.get(id);
+      if (item) this.applyMetadataRecord(item, record);
+    }
+    for (const [id, record] of Object.entries(this.metadata.series)) {
+      const series = this.series.get(id);
+      if (series) this.applyMetadataRecord(series, record);
+    }
+  }
+
+  setMetadata(kind, id, patch = {}) {
+    const entity = kind === 'series' ? this.series.get(id) : this.items.get(id);
+    if (!entity || (kind !== 'series' && entity.kind !== 'movie')) {
+      const err = new Error('影片不存在');
+      err.status = 404;
+      throw err;
+    }
+    const bucket = kind === 'series' ? this.metadata.series : this.metadata.items;
+    const record = { ...(bucket[id] || {}) };
+    if (patch.title !== undefined) record.title = String(patch.title || '').trim().slice(0, 200);
+    if (patch.year !== undefined) {
+      const year = Number(patch.year);
+      record.year = Number.isInteger(year) && year >= 1800 && year <= 2200 ? year : null;
+    }
+    if (patch.overview !== undefined) record.overview = String(patch.overview || '').trim().slice(0, 4000);
+    if (patch.posterPath !== undefined) record.posterPath = String(patch.posterPath || '') || null;
+    if (patch.backdropPath !== undefined) record.backdropPath = String(patch.backdropPath || '') || null;
+    if (patch.source !== undefined) record.source = String(patch.source || '').slice(0, 40);
+    if (patch.externalId !== undefined) record.externalId = String(patch.externalId || '').slice(0, 100);
+    record.updatedAt = Date.now();
+    bucket[id] = record;
+    this.applyMetadataRecord(entity, record);
+    this.saveMetadata();
+    this.payloadCache = null;
+    this.revision += 1;
+    return record;
+  }
+
+  saveOnlineSubtitle(itemId, buffer, lang = 'zh') {
+    const item = this.items.get(itemId);
+    if (!item) {
+      const err = new Error('媒体不存在');
+      err.status = 404;
+      throw err;
+    }
+    if (!buffer || !buffer.length) {
+      const err = new Error('字幕内容为空');
+      err.status = 400;
+      throw err;
+    }
+    const safeLang = String(lang || 'zh').toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 12) || 'zh';
+    const dir = path.dirname(item.filePath);
+    const base = path.basename(item.filePath, path.extname(item.filePath));
+    let target = path.join(dir, `${base}.${safeLang}.srt`);
+    if (fs.existsSync(target)) target = path.join(dir, `${base}.${safeLang}.online.srt`);
+    fs.writeFileSync(target, buffer);
+    item._sidecarSubs = findSubtitleFiles(item.filePath);
+    this.payloadCache = null;
+    this.revision += 1;
+    return this.getSubtitleTracks(item).find((track) => track.file === target) || null;
   }
 
   // ------------------------------------------------------------------ progress
@@ -1170,6 +1290,12 @@ export class Library {
     const sourceItem = target || this.items.get(series.episodeIds[0]);
     if (!sourceItem) return null;
     const targetMtime = target ? target.mtime : series.mtime;
+
+    const metaOwner = target?.kind === 'episode' ? this.series.get(target.seriesId) : (target || series);
+    const metaFile = type === 'backdrop'
+      ? (metaOwner?._metaBackdrop || metaOwner?._metaPoster)
+      : (metaOwner?._metaPoster || metaOwner?._metaBackdrop);
+    if (metaFile && fs.existsSync(metaFile)) return { file: metaFile, source: true };
 
     let sidecar = null;
     if (target) {

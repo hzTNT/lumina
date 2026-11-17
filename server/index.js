@@ -14,6 +14,12 @@ import {
 import { MediaTools } from './ffmpeg.js';
 import { Library } from './library.js';
 import { UserStore } from './users.js';
+import {
+  downloadImage,
+  downloadSubtitle,
+  searchMetadata,
+  searchSubtitles,
+} from './metadata.js';
 
 const SERVER_VERSION = '1.0.0';
 const START_TIME = Date.now();
@@ -267,6 +273,12 @@ function createApp({ config, tools, library, users }) {
     scanOnStart: config.scanOnStart,
     scanIntervalMinutes: config.scanIntervalMinutes,
     transcode: config.transcode,
+    metadata: {
+      provider: config.metadata?.provider || 'auto',
+      language: config.metadata?.language || 'zh',
+      subtitleLanguage: config.metadata?.subtitleLanguage || 'zh',
+      hasTmdbKey: Boolean(config.metadata?.tmdbApiKey),
+    },
     ffmpeg: {
       available: tools.available,
       ffprobe: tools.ffprobeAvailable,
@@ -800,6 +812,148 @@ function createApp({ config, tools, library, users }) {
         sendFile(req, res, file, {
           type: MIME['.vtt'],
           cache: 'private, max-age=86400',
+        });
+        return;
+      }
+
+      if (pathname === '/api/metadata/search' && method === 'GET') {
+        requireAdmin(user);
+        const query = String(url.searchParams.get('q') || '').trim();
+        const kind = url.searchParams.get('kind') === 'series' ? 'series' : 'movie';
+        const year = Number(url.searchParams.get('year')) || null;
+        if (!query) {
+          sendError(res, 400, '请输入要搜索的片名');
+          return;
+        }
+        const result = await searchMetadata({ query, kind, year, config });
+        sendJson(res, 200, { ok: true, ...result });
+        return;
+      }
+
+      if (pathname === '/api/metadata/apply' && method === 'POST') {
+        requireAdmin(user);
+        const body = await readJson(req, 64 * 1024);
+        const kind = body.kind === 'series' ? 'series' : 'movie';
+        const id = String(body.id || '');
+        const entity = kind === 'series' ? library.getSeries(id) : library.getItem(id);
+        if (!entity || (kind === 'movie' && entity.kind !== 'movie')) {
+          sendError(res, 404, '影片不存在');
+          return;
+        }
+        const title = String(body.title || '').trim().slice(0, 200);
+        if (!title) {
+          sendError(res, 400, '标题不能为空');
+          return;
+        }
+        let warning = '';
+        let posterPath = null;
+        let backdropPath = null;
+        for (const [type, key] of [['poster', 'posterUrl'], ['backdrop', 'backdropUrl']]) {
+          const source = String(body[key] || '').trim();
+          if (!source) continue;
+          try {
+            const image = await downloadImage(source, {
+              destDir: library.metadataDir,
+              kind,
+              id,
+              type,
+            });
+            if (image) {
+              const rel = path.relative(DATA_DIR, image.file).split(path.sep).join('/');
+              if (type === 'poster') posterPath = rel;
+              else backdropPath = rel;
+            }
+          } catch (err) {
+            warning = warning || `封面保存失败：${err.message}`;
+          }
+        }
+        const metadata = library.setMetadata(kind, id, {
+          title,
+          year: body.year,
+          overview: body.overview,
+          posterPath: posterPath || undefined,
+          backdropPath: backdropPath || undefined,
+          source: body.source || 'manual',
+          externalId: body.externalId,
+        });
+        sendJson(res, 200, { ok: true, metadata, warning });
+        return;
+      }
+
+      if (pathname === '/api/metadata/subtitles' && method === 'GET') {
+        requireAdmin(user);
+        const itemId = String(url.searchParams.get('itemId') || '');
+        const item = itemId ? library.getItem(itemId) : null;
+        if (!item) {
+          sendError(res, 404, '媒体不存在');
+          return;
+        }
+        const kind = item.kind === 'episode' ? 'series' : 'movie';
+        const title = item.kind === 'episode' ? (item.seriesTitle || item.title) : item.title;
+        const show = item.kind === 'episode' ? library.getSeries(item.seriesId) : null;
+        const result = await searchSubtitles({
+          title,
+          kind,
+          year: show?.year || item.year || null,
+          season: item.kind === 'episode' ? item.season : null,
+          episode: item.kind === 'episode' ? item.episode : null,
+          lang: url.searchParams.get('lang') || config.metadata?.subtitleLanguage || 'zh',
+        });
+        sendJson(res, 200, { ok: true, ...result });
+        return;
+      }
+
+      if (pathname === '/api/metadata/subtitles' && method === 'POST') {
+        requireAdmin(user);
+        const body = await readJson(req, 64 * 1024);
+        const itemId = String(body.itemId || '');
+        const item = library.getItem(itemId);
+        if (!item) {
+          sendError(res, 404, '媒体不存在');
+          return;
+        }
+        const buffer = await downloadSubtitle(body.subtitleId);
+        const track = library.saveOnlineSubtitle(
+          itemId,
+          buffer,
+          body.lang || config.metadata?.subtitleLanguage || 'zh',
+        );
+        sendJson(res, 200, {
+          ok: true,
+          track,
+          subtitles: library.getSubtitleTracks(item).map((entry) => ({
+            id: entry.id,
+            label: entry.label,
+            lang: entry.lang,
+            forced: entry.forced,
+          })),
+        });
+        return;
+      }
+
+      if (pathname === '/api/settings/metadata' && method === 'POST') {
+        requireAdmin(user);
+        const body = await readJson(req, 64 * 1024);
+        const next = { ...(config.metadata || {}) };
+        if (['auto', 'tmdb', 'wikipedia'].includes(body.provider)) next.provider = body.provider;
+        if (body.clearTmdbKey === true) next.tmdbApiKey = '';
+        else if (typeof body.tmdbApiKey === 'string' && body.tmdbApiKey.trim()) {
+          next.tmdbApiKey = body.tmdbApiKey.trim();
+        }
+        if (body.language === 'en' || body.language === 'zh') next.language = body.language;
+        if (typeof body.subtitleLanguage === 'string' && body.subtitleLanguage.trim()) {
+          next.subtitleLanguage = body.subtitleLanguage.trim().slice(0, 12);
+        }
+        config.metadata = next;
+        persistConfig(config);
+        sendJson(res, 200, {
+          ok: true,
+          metadata: {
+            provider: next.provider,
+            language: next.language,
+            subtitleLanguage: next.subtitleLanguage,
+            hasTmdbKey: Boolean(next.tmdbApiKey),
+          },
         });
         return;
       }

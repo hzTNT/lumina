@@ -58,8 +58,17 @@ const state = {
   favoritesLoaded: false,
   sortMovies: localStorage.getItem('lumina.sort.movies') || 'recent',
   sortSeries: localStorage.getItem('lumina.sort.series') || 'recent',
+  sortFavorites: localStorage.getItem('lumina.sort.favorites') || 'recent',
+  sortContinue: localStorage.getItem('lumina.sort.continue') || 'recent',
   filterMovies: localStorage.getItem('lumina.filter.movies') || 'all',
   filterSeries: localStorage.getItem('lumina.filter.series') || 'all',
+  filterFavorites: localStorage.getItem('lumina.filter.favorites') || 'all',
+  filterContinue: localStorage.getItem('lumina.filter.continue') || 'all',
+  movieLimit: 48,
+  seriesLimit: 48,
+  favoriteLimit: 48,
+  continueLimit: 48,
+  settingsSection: localStorage.getItem('lumina.settings.section') || 'media',
   moviesById: new Map(),
   seriesById: new Map(),
   episodesById: new Map(),
@@ -161,27 +170,49 @@ function mediaLibraries(items) {
   return [...found].map(([id, name]) => ({ id, name }));
 }
 
+const BROWSE_CONFIG = {
+  movies: { sort: 'sortMovies', filter: 'filterMovies', limit: 'movieLimit' },
+  series: { sort: 'sortSeries', filter: 'filterSeries', limit: 'seriesLimit' },
+  favorites: { sort: 'sortFavorites', filter: 'filterFavorites', limit: 'favoriteLimit' },
+  continue: { sort: 'sortContinue', filter: 'filterContinue', limit: 'continueLimit' },
+};
+
 function browseItems(items, kind) {
-  const sortKey = kind === 'series' ? 'sortSeries' : 'sortMovies';
-  const filterKey = kind === 'series' ? 'filterSeries' : 'filterMovies';
+  const config = BROWSE_CONFIG[kind] || BROWSE_CONFIG.movies;
   const libraries = mediaLibraries(items);
-  let selected = state[filterKey] || 'all';
+  let selected = state[config.filter] || 'all';
   if (selected !== 'all' && !libraries.some((library) => library.id === selected)) selected = 'all';
-  state[filterKey] = selected;
+  state[config.filter] = selected;
   const filtered = selected === 'all' ? items : items.filter((item) => item.libraryId === selected);
-  const sorted = sortMedia(filtered, state[sortKey]);
-  const chips = `<div class="library-filter" role="group" aria-label="按媒体库分类">
-    <button type="button" class="filter-chip ${selected === 'all' ? 'active' : ''}" data-filter-kind="${kind}" data-filter-library="all" aria-pressed="${selected === 'all'}">全部<span>${items.length}</span></button>
-    ${libraries.length > 1 ? libraries.map((library) => {
+  const sorted = sortMedia(filtered, state[config.sort]);
+  const chips = libraries.length > 1
+    ? `<div class="library-filter" role="group" aria-label="按媒体库分类">
+    ${libraries.map((library) => {
       const count = items.filter((item) => item.libraryId === library.id).length;
       return `<button type="button" class="filter-chip ${selected === library.id ? 'active' : ''}" data-filter-kind="${kind}" data-filter-library="${esc(library.id)}" aria-pressed="${selected === library.id}">${esc(library.name)}<span>${count}</span></button>`;
-    }).join('') : ''}
-  </div>`;
-  const toolbar = `<div class="browse-toolbar">
+    }).join('')}
+    <button type="button" class="filter-chip ${selected === 'all' ? 'active' : ''}" data-filter-kind="${kind}" data-filter-library="all" aria-pressed="${selected === 'all'}">全部<span>${items.length}</span></button>
+  </div>`
+    : '';
+  const toolbar = `<div class="browse-toolbar${libraries.length > 1 ? '' : ' is-single'}">
     ${chips}
-    <label class="sort-control"><span>排序</span><select class="field select-sm" data-sort-kind="${kind}" aria-label="视频排序">${sortOptions(state[sortKey])}</select></label>
+    <label class="sort-control"><span>排序</span><select class="field select-sm" data-sort-kind="${kind}" aria-label="视频排序">${sortOptions(state[config.sort])}</select></label>
   </div>`;
   return { items: sorted, selected, libraries, toolbar };
+}
+
+function resetBrowseLimit(kind) {
+  const config = BROWSE_CONFIG[kind];
+  if (config) state[config.limit] = 48;
+}
+
+function loadMoreButton(kind, total, shown, label) {
+  if (shown >= total) return '';
+  return `<div class="load-more-wrap">
+    <button class="btn btn-ghost load-more" type="button" data-action="load-more" data-kind="${kind}">
+      ${icon('chevron-down')}加载更多${label ? ` · ${label}` : ''}<span>${shown} / ${total}</span>
+    </button>
+  </div>`;
 }
 
 // --------------------------------------------------------------------- utils
@@ -267,7 +298,7 @@ function favoriteButton(kind, id) {
 
 function favoriteActionButton(kind, id) {
   const active = isFavorited(kind, id);
-  return `<button class="btn btn-ghost fav-action ${active ? 'is-fav' : ''}" type="button" data-favorite="${kind}:${id}">${icon('heart')}${active ? '已收藏' : '收藏'}</button>`;
+  return `<button class="btn btn-ghost icon-only fav-action ${active ? 'is-fav' : ''}" type="button" data-favorite="${kind}:${id}" aria-label="${active ? '取消收藏' : '收藏'}" title="${active ? '取消收藏' : '收藏'}">${icon('heart')}</button>`;
 }
 
 function favoriteItems() {
@@ -297,6 +328,14 @@ function describe(item) {
   if (item.duration) bits.push(`时长 ${formatDuration(item.duration)}`);
   bits.push(`${qualityLabel(item)} 画质`);
   return `来自本地片库的${bits.join('、')}影片，支持随时续播、字幕与多端观看。`;
+}
+
+function descriptionBlock(text, { about = false } = {}) {
+  const long = String(text || '').length > 180;
+  return `<div class="desc-block${about ? ' about-desc' : ''}">
+    <p class="detail-desc">${esc(text)}</p>
+    ${long ? `<button class="desc-toggle" type="button" data-action="toggle-desc">${icon('chevron-down')}展开</button>` : ''}
+  </div>`;
 }
 
 function emptyView({ iconName = 'film', title, text, action = '' }) {
@@ -462,33 +501,44 @@ function renderHome() {
 
 function renderMovies() {
   const browse = browseItems(state.movies, 'movies');
-  const count = browse.selected === 'all' ? `${browse.items.length} 部影片` : `${browse.items.length} / ${state.movies.length} 部影片`;
+  const total = browse.items.length;
+  const shown = Math.min(total, state.movieLimit);
+  const visible = browse.items.slice(0, shown);
+  const count = total ? `共 ${total} 部，已显示 ${shown} 部` : '0 部影片';
   const head = `<div class="page-head"><h1>电影</h1><p>${count}</p></div>`;
   if (!state.movies.length) {
     return `${head}${emptyView({ title: '还没有电影', text: '把电影文件放进媒体目录，然后重新扫描媒体库。' })}`;
   }
-  if (!browse.items.length) {
+  if (!total) {
     return `${head}${browse.toolbar}${emptyView({ title: '这个媒体库还没有电影', text: '切换到其他分类，或把电影放进这个媒体库后重新扫描。' })}`;
   }
-  return `${head}${browse.toolbar}<div class="grid">${browse.items.map(posterCard).join('')}</div>`;
+  return `${head}${browse.toolbar}<div class="grid">${visible.map(posterCard).join('')}</div>${loadMoreButton('movies', total, shown, '电影')}`;
 }
 
 function renderSeriesList() {
   const browse = browseItems(state.series, 'series');
-  const count = browse.selected === 'all' ? `${browse.items.length} 部剧集 · ${state.stats.episodes || 0} 集` : `${browse.items.length} / ${state.series.length} 部剧集`;
+  const total = browse.items.length;
+  const shown = Math.min(total, state.seriesLimit);
+  const visible = browse.items.slice(0, shown);
+  const count = total ? `共 ${total} 部，已显示 ${shown} 部 · ${state.stats.episodes || 0} 集` : '0 部剧集';
   const head = `<div class="page-head"><h1>剧集</h1><p>${count}</p></div>`;
   if (!state.series.length) {
     return `${head}${emptyView({ title: '还没有剧集', text: '把剧集放进媒体目录，Lumina 会按文件夹和文件名自动识别季与集。' })}`;
   }
-  if (!browse.items.length) {
+  if (!total) {
     return `${head}${browse.toolbar}${emptyView({ title: '这个媒体库还没有剧集', text: '切换到其他分类，或把剧集放进这个媒体库后重新扫描。' })}`;
   }
-  return `${head}${browse.toolbar}<div class="grid">${browse.items.map(posterCard).join('')}</div>`;
+  return `${head}${browse.toolbar}<div class="grid">${visible.map(posterCard).join('')}</div>${loadMoreButton('series', total, shown, '剧集')}`;
 }
 
 function renderContinue() {
   const entries = continueEntries();
-  const head = `<div class="page-head"><h1>继续观看</h1><p>${entries.length} 个进行中</p></div>`;
+  const items = entries.map(({ item, record }) => ({ ...item, mtime: record.updatedAt || item.mtime, _record: record }));
+  const browse = browseItems(items, 'continue');
+  const total = browse.items.length;
+  const shown = Math.min(total, state.continueLimit);
+  const visible = browse.items.slice(0, shown);
+  const head = `<div class="page-head"><h1>继续观看</h1><p>${total ? `共 ${total} 个，已显示 ${shown} 个` : '0 个进行中'}</p></div>`;
   if (!entries.length) {
     return `${head}${emptyView({
       iconName: 'clock',
@@ -497,12 +547,20 @@ function renderContinue() {
       action: `<a class="btn btn-primary" href="#/home">${icon('home')}去首页看看</a>`,
     })}`;
   }
-  return `${head}<div class="continue-grid">${entries.map(({ item, record }) => continueCard(item, record)).join('')}</div>`;
+  if (!total) {
+    return `${head}${browse.toolbar}${emptyView({ title: '这个媒体库没有进行中的内容', text: '切换到其他分类，或先播放一部影片。' })}`;
+  }
+  return `${head}${browse.toolbar}<div class="continue-grid">${visible.map((item) => continueCard(item, item._record)).join('')}</div>${loadMoreButton('continue', total, shown, '进行中')}`;
 }
 
 function renderFavorites() {
   const entries = favoriteItems();
-  const head = `<div class="page-head"><h1>收藏</h1><p>${entries.length} 部已收藏</p></div>`;
+  const items = entries.map((entry) => ({ ...entry.item, _favorite: entry }));
+  const browse = browseItems(items, 'favorites');
+  const total = browse.items.length;
+  const shown = Math.min(total, state.favoriteLimit);
+  const visible = browse.items.slice(0, shown);
+  const head = `<div class="page-head"><h1>收藏</h1><p>${total ? `共 ${total} 部，已显示 ${shown} 部` : '0 部已收藏'}</p></div>`;
   if (!entries.length) {
     return `${head}${emptyView({
       iconName: 'heart',
@@ -511,7 +569,10 @@ function renderFavorites() {
       action: `<a class="btn btn-primary" href="#/movies">${icon('film')}去挑几部</a>`,
     })}`;
   }
-  return `${head}<div class="grid">${entries.map((entry) => posterCard(entry.item)).join('')}</div>`;
+  if (!total) {
+    return `${head}${browse.toolbar}${emptyView({ title: '这个媒体库没有收藏', text: '切换到其他分类，或先去片库收藏几部。' })}`;
+  }
+  return `${head}${browse.toolbar}<div class="grid">${visible.map(posterCard).join('')}</div>${loadMoreButton('favorites', total, shown, '收藏')}`;
 }
 
 // --------------------------------------------------------------------- search
@@ -584,7 +645,7 @@ function renderMovieDetail(id) {
           <span>${formatBytes(item.size)}</span>
           <span>${esc(formatContainer(item.container))}</span>
         </div>
-        <p class="detail-desc">${esc(describe(item))}</p>
+        ${descriptionBlock(describe(item))}
         <div class="detail-tags">
           ${item.videoCodec ? `<span class="tag">${esc(item.videoCodec.toUpperCase())}</span>` : ''}
           ${item.audioCodec ? `<span class="tag">${esc(item.audioCodec.toUpperCase())}</span>` : ''}
@@ -594,11 +655,16 @@ function renderMovieDetail(id) {
         ${isAdmin() ? `<div class="rating-editor"><span>${icon('shield')}年龄分级</span><select class="field select-sm" data-rating-kind="items" data-rating-id="${item.id}">${ageOptions(item.ageRating)}</select></div>` : ''}
         <div class="detail-actions">
           <button class="btn btn-primary" data-play="${item.id}">${icon('play', 'fill')}${resume ? '继续观看' : '立即播放'}</button>
-          ${resume ? `<button class="btn btn-ghost" data-action="restart" data-id="${item.id}">${icon('replay')}从头播放</button>` : ''}
           ${favoriteActionButton('movie', item.id)}
-          ${isAdmin() ? `<button class="btn btn-ghost" data-action="open-metadata" data-kind="movie" data-id="${item.id}">${icon('spark')}匹配元数据</button>
-          <button class="btn btn-ghost" data-action="open-subtitles" data-id="${item.id}">${icon('subtitles')}在线字幕</button>` : ''}
-          <a class="btn btn-ghost" href="#/movies">${icon('arrow-left')}返回电影</a>
+          <div class="detail-more-wrap">
+            <button class="btn btn-ghost" data-action="detail-more" aria-expanded="false">${icon('chevron-down')}更多</button>
+            <div class="detail-more-menu" hidden>
+              ${resume ? `<button class="detail-more-item" data-action="restart" data-id="${item.id}">${icon('replay')}从头播放</button>` : ''}
+              ${isAdmin() ? `<button class="detail-more-item" data-action="open-metadata" data-kind="movie" data-id="${item.id}">${icon('spark')}匹配元数据</button>
+              <button class="detail-more-item" data-action="open-subtitles" data-id="${item.id}">${icon('subtitles')}在线字幕</button>` : ''}
+              <a class="detail-more-item" href="#/movies">${icon('arrow-left')}返回电影</a>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -606,7 +672,7 @@ function renderMovieDetail(id) {
   <div class="detail-body">
     <div class="info-card">
       <h3>${icon('info')}关于这部影片</h3>
-      <p class="detail-desc" style="margin-top:0">${esc(describe(item))}</p>
+      ${descriptionBlock(describe(item), { about: true })}
       ${resume ? `<p class="detail-desc">上次看到 ${formatDuration(record.position)}${record.duration ? ` / ${formatDuration(record.duration)}` : ''}，已为你保留进度。</p>` : ''}
     </div>
     ${infoCard('媒体信息', facts)}
@@ -676,14 +742,19 @@ function renderSeriesDetail(id) {
           <span>${series.episodeCount} 集</span>
           <span>共 ${formatDuration(totalDuration)}</span>
         </div>
-        <p class="detail-desc">${esc(describe(series))}</p>
+        ${descriptionBlock(describe(series))}
         ${isAdmin() ? `<div class="rating-editor"><span>${icon('shield')}年龄分级</span><select class="field select-sm" data-rating-kind="series" data-rating-id="${series.id}">${ageOptions(series.ageRating)}</select></div>` : ''}
         <div class="detail-actions">
           ${target ? `<button class="btn btn-primary" data-play="${target.id}">${icon('play', 'fill')}${resume ? `继续观看 ${episodeCode(target.season, target.episode)}` : '播放第一集'}</button>` : ''}
-          ${resume && episodes[0] ? `<button class="btn btn-ghost" data-play="${episodes[0].id}">${icon('replay')}从第一集开始</button>` : ''}
           ${favoriteActionButton('series', series.id)}
-          ${isAdmin() ? `<button class="btn btn-ghost" data-action="open-metadata" data-kind="series" data-id="${series.id}">${icon('spark')}匹配元数据</button>` : ''}
-          <a class="btn btn-ghost" href="#/series">${icon('arrow-left')}返回剧集</a>
+          <div class="detail-more-wrap">
+            <button class="btn btn-ghost" data-action="detail-more" aria-expanded="false">${icon('chevron-down')}更多</button>
+            <div class="detail-more-menu" hidden>
+              ${resume && episodes[0] ? `<button class="detail-more-item" data-play="${episodes[0].id}">${icon('replay')}从第一集开始</button>` : ''}
+              ${isAdmin() ? `<button class="detail-more-item" data-action="open-metadata" data-kind="series" data-id="${series.id}">${icon('spark')}匹配元数据</button>` : ''}
+              <a class="detail-more-item" href="#/series">${icon('arrow-left')}返回剧集</a>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -881,71 +952,99 @@ function renderSettings() {
   const t = settings.transcode || {};
   const stats = state.stats;
 
-  return `<div class="page-head">
-    <h1>设置</h1>
-    <p>媒体库、用户、服务器与转码</p>
-    <div class="page-actions"><button class="btn btn-primary btn-sm" data-action="scan">${icon('refresh')}重新扫描</button></div>
-  </div>
-  <div class="settings-grid">
-    <div>
-      <div class="panel">
-        <h2>${icon('folder')}媒体库</h2>
-        <p class="hint">每个媒体库可以单独设置访问成员和最低年龄。保存后会自动重新扫描；修改不会移动或删除磁盘上的视频文件。</p>
-        <div class="library-list">${libraryCards}</div>
-        <div class="settings-actions">
-          <button class="btn btn-ghost btn-sm" data-action="add-library">${icon('plus')}添加媒体库</button>
-          <button class="btn btn-primary" data-action="save-libraries">${icon('check')}保存并扫描</button>
-          <button class="btn btn-ghost" data-action="reset-libraries" ${settingsDirty ? '' : 'disabled'}>${icon('refresh')}还原</button>
-          ${settingsDirty ? '<span class="badge warn">有未保存的修改</span>' : ''}
-        </div>
-      </div>
-      ${metadataSettingsPanel()}
-      <div class="panel">
-        <h2>${icon('grid')}片库概览</h2>
-        <div class="status-list">
-          <div class="status-row"><span>电影</span><strong>${stats.movies || 0} 部</strong></div>
-          <div class="status-row"><span>剧集</span><strong>${stats.series || 0} 部 / ${stats.episodes || 0} 集</strong></div>
-          <div class="status-row"><span>占用空间</span><strong>${formatBytes(stats.totalSize)}</strong></div>
-          <div class="status-row"><span>总时长</span><strong>${formatDuration(stats.totalDuration)}</strong></div>
-          <div class="status-row"><span>上次扫描</span><strong>${relativeTime(state.scannedAt)}</strong></div>
-          <div class="status-row"><span>媒体库</span><strong>${workingLibraries.length} 个</strong></div>
-        </div>
-      </div>
-      ${userManagementPanel()}
-      <div class="panel">
-        <h2>${icon('info')}维护</h2>
-        <p class="hint">清空所有影片的观看进度，不会影响视频文件。</p>
-        <div class="settings-actions">
-          <button class="btn btn-danger btn-sm" data-action="clear-progress">${icon('trash')}清空观看进度</button>
-        </div>
-      </div>
-    </div>
-    <div>
-      <div class="panel">
-        <h2>${icon('logo')}服务器</h2>
-        <div class="status-list">
-          <div class="status-row"><span>名称</span><strong>${esc(settings.serverName)}</strong></div>
-          <div class="status-row"><span>版本</span><strong>${esc(settings.version)}</strong></div>
-          <div class="status-row"><span>监听端口</span><strong>${port}</strong></div>
-          <div class="status-row"><span>运行时长</span><strong>${formatUptime(state.health?.uptime)}</strong></div>
-          <div class="status-row"><span>本机地址</span><strong><a href="http://localhost:${port}" target="_blank" rel="noreferrer">localhost:${port}</a></strong></div>
-          ${lanRows}
-          <div class="status-row"><span>程序目录</span><strong>${esc(settings.root)}</strong></div>
-        </div>
-      </div>
-      <div class="panel">
-        <h2>${icon('quality')}转码</h2>
-        <div class="status-list">
-          <div class="status-row"><span>FFmpeg</span><strong>${ffmpegBadge}</strong></div>
-          <div class="status-row"><span>最高分辨率</span><strong>${t.maxHeight || 1080}p</strong></div>
-          <div class="status-row"><span>分段长度</span><strong>${t.segmentSeconds || 6} 秒</strong></div>
-          <div class="status-row"><span>编码质量</span><strong>CRF ${t.crf ?? 23} · ${esc(t.preset || 'veryfast')}</strong></div>
-          <div class="status-row"><span>转码模式</span><strong>按需分段转码</strong></div>
-        </div>
-        <p class="hint">MKV / HEVC 等浏览器不支持的格式会在播放时自动分段转码为 HLS；MP4 + H.264 会直接串流，几乎不占 CPU。</p>
-      </div>
+  const mediaPanel = `<div class="panel">
+    <h2>${icon('folder')}媒体库</h2>
+    <p class="hint">每个媒体库可以单独设置访问成员和最低年龄。保存后会自动重新扫描；修改不会移动或删除磁盘上的视频文件。</p>
+    <div class="library-list">${libraryCards}</div>
+    <div class="settings-actions sticky-actions">
+      <button class="btn btn-ghost btn-sm" data-action="add-library">${icon('plus')}添加媒体库</button>
+      <button class="btn btn-primary" data-action="save-libraries">${icon('check')}保存并扫描</button>
+      <button class="btn btn-ghost" data-action="reset-libraries" ${settingsDirty ? '' : 'disabled'}>${icon('refresh')}还原</button>
+      ${settingsDirty ? '<span class="badge warn">有未保存的修改</span>' : ''}
     </div>
   </div>`;
+
+  const overviewPanel = `<div class="panel">
+    <h2>${icon('grid')}片库概览</h2>
+    <div class="status-list">
+      <div class="status-row"><span>电影</span><strong>${stats.movies || 0} 部</strong></div>
+      <div class="status-row"><span>剧集</span><strong>${stats.series || 0} 部 / ${stats.episodes || 0} 集</strong></div>
+      <div class="status-row"><span>占用空间</span><strong>${formatBytes(stats.totalSize)}</strong></div>
+      <div class="status-row"><span>总时长</span><strong>${formatDuration(stats.totalDuration)}</strong></div>
+      <div class="status-row"><span>上次扫描</span><strong>${relativeTime(state.scannedAt)}</strong></div>
+      <div class="status-row"><span>媒体库</span><strong>${workingLibraries.length} 个</strong></div>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>${icon('info')}维护</h2>
+    <p class="hint">清空所有影片的观看进度，不会影响视频文件。</p>
+    <div class="settings-actions">
+      <button class="btn btn-danger btn-sm" data-action="clear-progress">${icon('trash')}清空观看进度</button>
+    </div>
+  </div>`;
+
+  const serverPanel = `<div class="panel">
+    <h2>${icon('logo')}服务器</h2>
+    <div class="status-list">
+      <div class="status-row"><span>名称</span><strong>${esc(settings.serverName)}</strong></div>
+      <div class="status-row"><span>版本</span><strong>${esc(settings.version)}</strong></div>
+      <div class="status-row"><span>监听端口</span><strong>${port}</strong></div>
+      <div class="status-row"><span>运行时长</span><strong>${formatUptime(state.health?.uptime)}</strong></div>
+      <div class="status-row"><span>本机地址</span><strong><a href="http://localhost:${port}" target="_blank" rel="noreferrer">localhost:${port}</a></strong></div>
+      ${lanRows}
+      <div class="status-row"><span>程序目录</span><strong>${esc(settings.root)}</strong></div>
+    </div>
+  </div>`;
+
+  const transcodePanel = `<div class="panel">
+    <h2>${icon('quality')}转码</h2>
+    <div class="status-list">
+      <div class="status-row"><span>FFmpeg</span><strong>${ffmpegBadge}</strong></div>
+      <div class="status-row"><span>最高分辨率</span><strong>${t.maxHeight || 1080}p</strong></div>
+      <div class="status-row"><span>分段长度</span><strong>${t.segmentSeconds || 6} 秒</strong></div>
+      <div class="status-row"><span>编码质量</span><strong>CRF ${t.crf ?? 23} · ${esc(t.preset || 'veryfast')}</strong></div>
+      <div class="status-row"><span>转码模式</span><strong>按需分段转码</strong></div>
+    </div>
+    <p class="hint">MKV / HEVC 等浏览器不支持的格式会在播放时自动分段转码为 HLS；MP4 + H.264 会直接串流，几乎不占 CPU。</p>
+  </div>`;
+
+  const sections = [
+    { id: 'media', label: '媒体库', iconName: 'folder', body: mediaPanel },
+    { id: 'users', label: '用户', iconName: 'users', body: userManagementPanel() },
+    { id: 'metadata', label: '元数据', iconName: 'spark', body: metadataSettingsPanel() },
+    { id: 'server', label: '服务器', iconName: 'logo', body: serverPanel },
+    { id: 'transcode', label: '转码', iconName: 'quality', body: transcodePanel },
+    { id: 'overview', label: '概览', iconName: 'grid', body: overviewPanel },
+  ];
+  if (!sections.some((section) => section.id === state.settingsSection)) state.settingsSection = 'media';
+  const nav = sections.map((section) => `<button type="button" class="settings-tab ${section.id === state.settingsSection ? 'active' : ''}" data-settings-section="${section.id}" aria-current="${section.id === state.settingsSection ? 'page' : 'false'}">
+    ${icon(section.iconName)}${section.label}
+  </button>`).join('');
+
+  return `<div class="page-head">
+    <h1>设置</h1>
+    <p>按分区快速找到需要的选项</p>
+    <div class="page-actions"><button class="btn btn-primary btn-sm" data-action="scan">${icon('refresh')}重新扫描</button></div>
+  </div>
+  <nav class="settings-nav" aria-label="设置分区">${nav}</nav>
+  <div class="settings-sections">
+    ${sections.map((section) => `<section class="settings-section" data-settings-panel="${section.id}" ${section.id === state.settingsSection ? '' : 'hidden'}>
+      ${section.body}
+    </section>`).join('')}
+  </div>`;
+}
+
+function applySettingsSection() {
+  const active = state.settingsSection || 'media';
+  document.querySelectorAll('[data-settings-panel]').forEach((panel) => {
+    panel.hidden = panel.dataset.settingsPanel !== active;
+  });
+  document.querySelectorAll('[data-settings-section]').forEach((tab) => {
+    const selected = tab.dataset.settingsSection === active;
+    tab.classList.toggle('active', selected);
+    tab.setAttribute('aria-current', selected ? 'page' : 'false');
+  });
+  localStorage.setItem('lumina.settings.section', active);
 }
 
 // --------------------------------------------------------------------- profile
@@ -1269,6 +1368,7 @@ async function renderRoute({ scroll = true } = {}) {
 
   if (token !== renderSeq) return;
   view.innerHTML = html;
+  if (route.name === 'settings') applySettingsSection();
 }
 
 // -------------------------------------------------------------------- chrome
@@ -1758,6 +1858,7 @@ async function openMetadataDialog(kind, id) {
       <input class="field dialog-year" id="metadata-year" value="${entity.year || ''}" inputmode="numeric" placeholder="年份" aria-label="年份">
       <button class="btn btn-primary" type="submit">${icon('search')}搜索</button>
     </form>
+    ${kind === 'series' ? `<label class="check-field metadata-keep-titles"><input type="checkbox" id="metadata-keep-episode-titles" checked>保留各集现有标题（只更新剧集名）</label>` : ''}
     <p class="hint" id="metadata-source-note">正在搜索…</p>
     <div class="metadata-results" id="metadata-results"></div>`;
   const wrap = dialogShell('metadata-modal', `匹配元数据 · ${entity.title}`, body);
@@ -1771,6 +1872,7 @@ async function openMetadataDialog(kind, id) {
     searchMetadataModal();
   });
   searchMetadataModal();
+  document.getElementById('metadata-query')?.focus();
 }
 
 function proxiedImageUrl(url) {
@@ -1812,11 +1914,13 @@ async function searchMetadataModal() {
       return;
     }
     results.innerHTML = metadataResults.map((item, index) => `<article class="metadata-result">
-      <div class="metadata-poster">${item.posterUrl ? `<img src="${esc(proxiedImageUrl(item.posterUrl))}" alt="" loading="lazy" referrerpolicy="no-referrer">` : `<span>${icon('film')}</span>`}</div>
+      <div class="metadata-poster">${item.posterUrl
+        ? `<img src="${esc(proxiedImageUrl(item.posterUrl))}" alt="" loading="lazy" referrerpolicy="no-referrer">`
+        : `<span class="poster-placeholder">${icon('film')}<small>暂无海报</small></span>`}</div>
       <div class="metadata-info">
         <h3>${esc(item.title)}</h3>
-        <p class="metadata-meta">${item.year ? `${item.year} 年 · ` : ''}${metadataSourceLabel(data.source)}</p>
-        <p class="metadata-overview">${esc(item.overview || '暂无简介')}</p>
+        <p class="metadata-meta">${item.year ? `${item.year} 年 · ` : ''}${metadataSourceLabel(item.provider || data.source)}</p>
+        <p class="metadata-overview ${item.overview ? '' : 'is-empty'}">${esc(item.overview || '数据源未提供简介')}</p>
       </div>
       <button class="btn btn-primary btn-sm" data-apply-metadata="${index}">应用</button>
     </article>`).join('');
@@ -1848,6 +1952,9 @@ async function applyMetadataResult(index) {
         backdropUrl: item.backdropUrl,
         source: item.provider,
         externalId: item.externalId,
+        keepEpisodeTitles: metadataContext.kind === 'series'
+          ? Boolean(document.getElementById('metadata-keep-episode-titles')?.checked)
+          : undefined,
       }),
     });
     closeDialogs();
@@ -1871,12 +1978,15 @@ async function openSubtitleDialog(itemId) {
     ? `${item.seriesTitle} · ${episodeCode(item.season, item.episode)}`
     : item.title;
   subtitleContext = { itemId, label };
-  const lang = state.settings?.metadata?.subtitleLanguage || 'zh';
-  const body = `<div class="dialog-inline">
+  const savedLang = localStorage.getItem('lumina.subtitle.searchLang');
+  const preferred = savedLang || state.settings?.metadata?.subtitleLanguage || 'zh';
+  const lang = ['zh', 'en', 'all'].includes(preferred) ? preferred : 'zh';
+  const body = `<div class="dialog-inline subtitle-toolbar">
       <span class="hint">为「${esc(label)}」搜索字幕</span>
-      <select class="field select-sm" id="subtitle-language">
+      <select class="field select-sm" id="subtitle-language" aria-label="字幕语言">
         <option value="zh" ${lang === 'zh' ? 'selected' : ''}>中文</option>
         <option value="en" ${lang === 'en' ? 'selected' : ''}>English</option>
+        <option value="all" ${lang === 'all' ? 'selected' : ''}>全部语言</option>
       </select>
     </div>
     <p class="hint" id="subtitle-note">正在搜索…</p>
@@ -1886,9 +1996,14 @@ async function openSubtitleDialog(itemId) {
     if (event.target.closest('[data-close-dialog]') || event.target === wrap) closeDialogs();
     const download = event.target.closest('[data-download-subtitle]');
     if (download) downloadSubtitleResult(Number(download.dataset.downloadSubtitle));
+    if (event.target.closest('[data-subtitle-retry]')) loadSubtitleResults();
   });
-  wrap.querySelector('#subtitle-language').addEventListener('change', loadSubtitleResults);
+  wrap.querySelector('#subtitle-language').addEventListener('change', (event) => {
+    localStorage.setItem('lumina.subtitle.searchLang', event.target.value);
+    loadSubtitleResults();
+  });
   loadSubtitleResults();
+  document.getElementById('subtitle-language')?.focus();
 }
 
 async function loadSubtitleResults() {
@@ -1907,7 +2022,11 @@ async function loadSubtitleResults() {
       ? `来自 MySubs · ${data.results.length} 条候选`
       : '没有找到字幕，可以换个语言再试。';
     if (!subtitleResults.length) {
-      results.innerHTML = `<div class="empty compact"><p class="empty-title">没有找到字幕</p><p>数据源覆盖有限，请换个语言或稍后再试。</p></div>`;
+      results.innerHTML = `<div class="subtitle-empty">
+        <span>${icon('subtitles')}</span>
+        <div><strong>没有找到字幕</strong><p>换个语言或稍后再试，数据源覆盖有限。</p></div>
+        <button class="btn btn-ghost btn-sm" type="button" data-subtitle-retry>${icon('refresh')}重新搜索</button>
+      </div>`;
       return;
     }
     results.innerHTML = subtitleResults.map((item, index) => `<article class="subtitle-result">
@@ -1918,7 +2037,11 @@ async function loadSubtitleResults() {
     </article>`).join('');
   } catch (err) {
     note.textContent = err.message || '字幕搜索失败';
-    results.innerHTML = '';
+    results.innerHTML = `<div class="subtitle-empty">
+      <span>${icon('info')}</span>
+      <div><strong>字幕搜索失败</strong><p>${esc(err.message || '请检查网络后重试。')}</p></div>
+      <button class="btn btn-ghost btn-sm" type="button" data-subtitle-retry>${icon('refresh')}重试</button>
+    </div>`;
   }
 }
 
@@ -1936,7 +2059,10 @@ async function downloadSubtitleResult(index) {
       body: JSON.stringify({
         itemId: subtitleContext.itemId,
         subtitleId: item.id,
-        lang: document.getElementById('subtitle-language')?.value || 'zh',
+        lang: (() => {
+          const selected = document.getElementById('subtitle-language')?.value || 'zh';
+          return selected === 'all' ? (item.lang || 'und') : selected;
+        })(),
       }),
     });
     closeDialogs();
@@ -1985,6 +2111,33 @@ async function clearTmdbKey() {
 
 async function handleAction(element) {
   const action = element.dataset.action;
+  if (action === 'toggle-desc') {
+    const block = element.closest('.desc-block');
+    if (block) {
+      const expanded = block.classList.toggle('expanded');
+      element.innerHTML = expanded ? `${icon('chevron-down')}收起` : `${icon('chevron-down')}展开`;
+      element.classList.toggle('is-open', expanded);
+    }
+    return undefined;
+  }
+  if (action === 'detail-more') {
+    const wrap = element.closest('.detail-more-wrap');
+    const menu = wrap?.querySelector('.detail-more-menu');
+    if (menu) {
+      menu.hidden = !menu.hidden;
+      element.setAttribute('aria-expanded', menu.hidden ? 'false' : 'true');
+    }
+    return undefined;
+  }
+  if (action === 'load-more') {
+    const kind = element.dataset.kind;
+    const config = BROWSE_CONFIG[kind];
+    if (config) {
+      state[config.limit] += 48;
+      await renderRoute({ scroll: false });
+    }
+    return undefined;
+  }
   if (action === 'scan') return triggerScan();
   if (action === 'dismiss-birthday') {
     if (birthdayBanner?.dataset.key) localStorage.setItem('lumina.birthday.dismissed', birthdayBanner.dataset.key);
@@ -2033,12 +2186,12 @@ function authInput(label, name, type = 'text', extra = '', autocomplete = '') {
   </label>`;
 }
 
-function authBirthDateInput() {
+function authBirthDateInput(required = true) {
   const today = new Date();
   const max = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-  return `<label class="auth-field"><span>出生日期</span>
-    <input name="birthDate" type="date" min="1900-01-01" max="${max}" required autocomplete="bday">
-    <small class="auth-field-note">用于计算可观看年龄，并会在生日当天送上祝福。</small>
+  return `<label class="auth-field"><span>出生日期${required ? '' : '（可选）'}</span>
+    <input name="birthDate" type="date" min="1900-01-01" max="${max}" ${required ? 'required' : ''} autocomplete="bday">
+    <small class="auth-field-note">${required ? '用于计算可观看年龄，并会在生日当天送上祝福。' : '可稍后在个人资料中填写；生日当天会送上祝福。'}</small>
   </label>`;
 }
 
@@ -2065,7 +2218,7 @@ function renderAuth(notice = '') {
       ${authInput('用户名', 'username', 'text', 'minlength="2" maxlength="24" placeholder="2-24 位，中英文/数字/_-"', 'username')}
       ${authInput('密码', 'password', 'password', 'minlength="6" placeholder="至少 6 位"', registering ? 'new-password' : 'current-password')}
       ${registering ? authInput('确认密码', 'confirm', 'password', 'minlength="6" placeholder="再次输入密码"', 'new-password') : ''}
-      ${registering ? authBirthDateInput() : ''}
+      ${registering ? authBirthDateInput(!setup) : ''}
       <p class="auth-error" id="auth-error" role="alert"></p>
       <button class="btn btn-primary auth-submit" type="submit">${setup ? '创建并进入' : register ? '注册并登录' : '登录'}</button>
     </form>
@@ -2406,6 +2559,12 @@ function bindEvents() {
 
   document.addEventListener('click', (event) => {
     if (!accountMenu.hidden && !event.target.closest('.account-wrap')) closeAccountMenu();
+    if (!event.target.closest('.detail-more-wrap')) {
+      document.querySelectorAll('.detail-more-menu').forEach((menu) => {
+        menu.hidden = true;
+        menu.closest('.detail-more-wrap')?.querySelector('[data-action="detail-more"]')?.setAttribute('aria-expanded', 'false');
+      });
+    }
   });
 
   searchInput.addEventListener('input', debounce(() => {
@@ -2418,13 +2577,23 @@ function bindEvents() {
   });
 
   view.addEventListener('click', (event) => {
+    const settingsTab = event.target.closest('[data-settings-section]');
+    if (settingsTab) {
+      event.preventDefault();
+      state.settingsSection = settingsTab.dataset.settingsSection || 'media';
+      applySettingsSection();
+      document.querySelector('.settings-nav')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      return;
+    }
     const libraryFilter = event.target.closest('[data-filter-library]');
     if (libraryFilter) {
       event.preventDefault();
-      const kind = libraryFilter.dataset.filterKind === 'series' ? 'series' : 'movies';
-      const key = kind === 'series' ? 'filterSeries' : 'filterMovies';
-      state[key] = libraryFilter.dataset.filterLibrary || 'all';
-      localStorage.setItem(`lumina.filter.${kind}`, state[key]);
+      const kind = libraryFilter.dataset.filterKind;
+      const config = BROWSE_CONFIG[kind];
+      if (!config) return;
+      state[config.filter] = libraryFilter.dataset.filterLibrary || 'all';
+      localStorage.setItem(`lumina.filter.${kind}`, state[config.filter]);
+      resetBrowseLimit(kind);
       renderRoute({ scroll: false });
       return;
     }
@@ -2487,10 +2656,12 @@ function bindEvents() {
   view.addEventListener('change', async (event) => {
     const sort = event.target.closest('[data-sort-kind]');
     if (sort) {
-      const kind = sort.dataset.sortKind === 'series' ? 'series' : 'movies';
-      const key = kind === 'series' ? 'sortSeries' : 'sortMovies';
-      state[key] = SORT_OPTIONS.some((option) => option.value === sort.value) ? sort.value : 'recent';
-      localStorage.setItem(`lumina.sort.${kind}`, state[key]);
+      const kind = sort.dataset.sortKind;
+      const config = BROWSE_CONFIG[kind];
+      if (!config) return;
+      state[config.sort] = SORT_OPTIONS.some((option) => option.value === sort.value) ? sort.value : 'recent';
+      localStorage.setItem(`lumina.sort.${kind}`, state[config.sort]);
+      resetBrowseLimit(kind);
       renderRoute({ scroll: false });
       return;
     }

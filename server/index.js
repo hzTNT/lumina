@@ -894,6 +894,8 @@ function createApp({ config, tools, library, users }) {
           backdropPath: backdropPath || undefined,
           source: body.source || 'manual',
           externalId: body.externalId,
+        }, {
+          keepEpisodeTitles: kind === 'series' && body.keepEpisodeTitles === true,
         });
         sendJson(res, 200, { ok: true, metadata, warning });
         return;

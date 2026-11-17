@@ -937,7 +937,7 @@ export class Library {
     return fs.existsSync(abs) ? abs : null;
   }
 
-  applyMetadataRecord(entity, record) {
+  applyMetadataRecord(entity, record, { keepEpisodeTitles = false } = {}) {
     const kind = entity.kind === 'series' ? 'series' : 'movie';
     const poster = this.metadataPath(record.posterPath);
     const backdrop = this.metadataPath(record.backdropPath);
@@ -950,11 +950,13 @@ export class Library {
     entity._metaBackdrop = backdrop;
     if (kind === 'series') {
       if (record.title) entity.title = String(record.title).slice(0, 200);
-      for (const id of entity.episodeIds || []) {
-        const ep = this.items.get(id);
-        if (ep) {
-          ep.seriesTitle = entity.title;
-          ep._metaVersion = entity._metaVersion;
+      if (!keepEpisodeTitles) {
+        for (const id of entity.episodeIds || []) {
+          const ep = this.items.get(id);
+          if (ep) {
+            ep.seriesTitle = entity.title;
+            ep._metaVersion = entity._metaVersion;
+          }
         }
       }
     } else {
@@ -969,11 +971,15 @@ export class Library {
     }
     for (const [id, record] of Object.entries(this.metadata.series)) {
       const series = this.series.get(id);
-      if (series) this.applyMetadataRecord(series, record);
+      if (series) {
+        this.applyMetadataRecord(series, record, {
+          keepEpisodeTitles: record.keepEpisodeTitles === true,
+        });
+      }
     }
   }
 
-  setMetadata(kind, id, patch = {}) {
+  setMetadata(kind, id, patch = {}, options = {}) {
     const entity = kind === 'series' ? this.series.get(id) : this.items.get(id);
     if (!entity || (kind !== 'series' && entity.kind !== 'movie')) {
       const err = new Error('影片不存在');
@@ -993,9 +999,12 @@ export class Library {
     if (patch.backdropPath !== undefined) record.backdropPath = String(patch.backdropPath || '') || null;
     if (patch.source !== undefined) record.source = String(patch.source || '').slice(0, 40);
     if (patch.externalId !== undefined) record.externalId = String(patch.externalId || '').slice(0, 100);
+    if (kind === 'series') record.keepEpisodeTitles = options.keepEpisodeTitles === true;
     record.updatedAt = Date.now();
     bucket[id] = record;
-    this.applyMetadataRecord(entity, record);
+    this.applyMetadataRecord(entity, record, {
+      keepEpisodeTitles: options.keepEpisodeTitles === true,
+    });
     this.saveMetadata();
     this.payloadCache = null;
     this.revision += 1;

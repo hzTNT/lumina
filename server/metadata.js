@@ -321,7 +321,7 @@ export async function searchSubtitles({
   if (!matched) return { title: null, results: [] };
   const params = new URLSearchParams();
   const language = cleanText(lang, 12) || 'zh';
-  params.set('lang', language);
+  if (language !== 'all') params.set('lang', language);
   if (kind === 'series' && season != null && episode != null) {
     params.set('season', String(season));
     params.set('episode', String(episode));

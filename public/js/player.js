@@ -677,7 +677,7 @@ export class Player {
 
   buildMenus() {
     const subtitleItems = [
-      `<button data-subtitle="-1" class="${this.subtitleIndex < 0 ? 'active' : ''}"><span class="menu-label">关闭字幕</span>${icon('check')}</button>`,
+      `<button data-subtitle="-1" class="${this.subtitleIndex < 0 ? 'active' : ''}" aria-label="关闭字幕"><span class="menu-label">关闭字幕</span>${icon('check')}</button>`,
       ...this.tracks.map((track, index) => (
         `<button data-subtitle="${index}" class="${this.subtitleIndex === index ? 'active' : ''}"><span class="menu-label">${esc(track.label)}</span>${icon('check')}</button>`
       )),
@@ -689,7 +689,7 @@ export class Player {
 
     const list = this.mode === 'hls' && this.qualities.length
       ? this.qualities.map((q) => (
-        `<button data-quality="${q}" class="${this.quality === q ? 'active' : ''}"><span class="menu-label">${q}p</span>${icon('check')}</button>`
+        `<button data-quality="${q}" class="${this.quality === q ? 'active' : ''}" aria-label="切换到 ${q}p"><span class="menu-label">${q}p</span>${icon('check')}</button>`
       ))
       : [`<button data-quality="direct" class="active"><span class="menu-label">原画（直连）</span>${icon('check')}</button>`];
     this.qualityMenu.innerHTML = `<div class="menu-title">画质</div>${list.join('')}`;

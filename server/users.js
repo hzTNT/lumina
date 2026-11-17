@@ -364,14 +364,13 @@ export class UserStore {
       throw err;
     }
 
+    const isFirst = this.users.size === 0;
     const birthDate = normalizeBirthDate(input.birthDate);
-    if (birthDate === null) {
+    if (!birthDate && !isFirst) {
       const err = new Error('出生日期格式应为 YYYY-MM-DD');
       err.status = 400;
       throw err;
     }
-
-    const isFirst = this.users.size === 0;
     const actualRole = isFirst ? 'admin' : (ROLES.has(role) ? role : 'member');
     const id = `u_${crypto.randomBytes(8).toString('hex')}`;
     const record = {
@@ -392,12 +391,13 @@ export class UserStore {
   }
 
   async register(input) {
-    if (normalizeBirthDate(input.birthDate) === null) {
+    const firstUser = this.needsSetup();
+    if (!firstUser && !normalizeBirthDate(input.birthDate)) {
       const err = new Error('请选择有效的出生日期');
       err.status = 400;
       throw err;
     }
-    return this.createUser(input, { role: 'member' });
+    return this.createUser(input, { role: firstUser ? 'admin' : 'member' });
   }
 
   issueSession(user, req) {

@@ -3990,7 +3990,12 @@ body.modal-open { overflow: hidden; }
   background: rgba(12, 15, 20, 0.92);
   backdrop-filter: blur(12px);
 }
-.browse-toolbar.is-single { justify-content: flex-end; }
+.browse-toolbar.is-single {
+  justify-content: flex-end;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+}
 .browse-toolbar.is-single .sort-control { margin-left: auto; }
 .load-more-wrap { display: flex; justify-content: center; padding: 26px 0 8px; }
 .load-more { gap: 8px; }

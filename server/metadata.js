@@ -6,6 +6,7 @@ const IMAGE_HOSTS = new Set([
   'image.tmdb.org',
   'upload.wikimedia.org',
   'thumb.wikimedia.org',
+  'static.tvmaze.com',
 ]);
 
 function cleanText(value, max = 2000) {
@@ -32,18 +33,32 @@ function absoluteImage(url) {
   try {
     const parsed = new URL(url);
     if (parsed.protocol !== 'https:') return null;
-    if (!IMAGE_HOSTS.has(parsed.hostname) && !parsed.hostname.endsWith('.wikimedia.org')) return null;
+    if (!IMAGE_HOSTS.has(parsed.hostname)
+      && !parsed.hostname.endsWith('.wikimedia.org')
+      && !parsed.hostname.endsWith('.doubanio.com')) return null;
     return parsed.toString();
   } catch {
     return null;
   }
 }
 
-async function fetchJson(url) {
+function imageHeaders(url) {
+  const headers = { 'User-Agent': USER_AGENT, Accept: 'image/*' };
+  try {
+    if (new URL(url).hostname.endsWith('.doubanio.com')) {
+      headers.Referer = 'https://movie.douban.com/';
+    }
+  } catch {}
+  return headers;
+}
+
+async function fetchJson(url, { referer = '' } = {}) {
   let res;
   try {
+    const headers = { 'User-Agent': USER_AGENT, Accept: 'application/json' };
+    if (referer) headers.Referer = referer;
     res = await fetch(url, {
-      headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
+      headers,
       signal: AbortSignal.timeout(15000),
     });
   } catch {
@@ -93,6 +108,53 @@ export async function searchWikipedia({ query, kind = 'movie', year = null, lang
   }).filter((item) => item.title && (item.overview || item.posterUrl));
 }
 
+export async function searchDouban({ query, kind = 'movie', year = null }) {
+  const q = cleanText(query, 100);
+  if (!q) return [];
+  const data = await fetchJson(
+    `https://movie.douban.com/j/subject_suggest?q=${encodeURIComponent(q)}`,
+    { referer: 'https://movie.douban.com/' },
+  );
+  const rows = Array.isArray(data) ? data : [];
+  const wanted = kind === 'series' ? 'tv' : 'movie';
+  return rows
+    .filter((row) => !row.type || row.type === wanted)
+    .slice(0, 10)
+    .map((row) => ({
+      provider: 'douban',
+      externalId: String(row.id || ''),
+      title: row.title || q,
+      originalTitle: row.sub_title || '',
+      year: Number(row.year) || null,
+      overview: '',
+      posterUrl: absoluteImage(row.img),
+      backdropUrl: null,
+      sourceUrl: row.url || (row.id ? `https://movie.douban.com/subject/${row.id}/` : ''),
+    }))
+    .filter((item) => item.title && item.posterUrl);
+}
+
+export async function searchTvmaze({ query, kind = 'series', year = null }) {
+  const q = cleanText(query, 100);
+  if (!q || kind !== 'series') return [];
+  const data = await fetchJson(`https://api.tvmaze.com/search/shows?q=${encodeURIComponent(q)}`);
+  const rows = Array.isArray(data) ? data : [];
+  return rows.slice(0, 10).map((entry) => {
+    const show = entry?.show || {};
+    return {
+      provider: 'tvmaze',
+      externalId: String(show.id || ''),
+      title: show.name || q,
+      originalTitle: show.name || '',
+      year: yearFromText(show.premiered) || null,
+      overview: cleanText(show.summary, 1500),
+      posterUrl: absoluteImage(show.image?.original),
+      backdropUrl: null,
+      sourceUrl: show.url || '',
+    };
+  }).filter((item) => item.title && (item.overview || item.posterUrl));
+}
+
 export async function searchTmdb({ query, kind = 'movie', year = null, apiKey, language = 'zh-CN' }) {
   const q = cleanText(query, 100);
   if (!q || !apiKey) return [];
@@ -127,26 +189,73 @@ export async function searchMetadata({ query, kind = 'movie', year = null, confi
     err.status = 400;
     throw err;
   }
-  if (provider !== 'wikipedia' && meta.tmdbApiKey) {
-    try {
-      const results = await searchTmdb({
-        query,
-        kind,
-        year,
+
+  const run = async (name) => {
+    if (name === 'tmdb') {
+      return searchTmdb({
+        query, kind, year,
         apiKey: meta.tmdbApiKey,
         language: language === 'en' ? 'en-US' : 'zh-CN',
       });
-      if (results.length) return { source: 'tmdb', results };
+    }
+    if (name === 'douban') return searchDouban({ query, kind, year });
+    if (name === 'tvmaze') return searchTvmaze({ query, kind, year });
+    return searchWikipedia({ query, kind, year, language });
+  };
+  const explicit = ['tmdb', 'douban', 'tvmaze', 'wikipedia'].includes(provider);
+  const order = explicit
+    ? [provider]
+    : [
+        ...(meta.tmdbApiKey ? ['tmdb'] : []),
+        ...(kind === 'series' ? ['tvmaze'] : []),
+        'douban',
+        'wikipedia',
+      ];
+
+  let lastError = null;
+  for (const name of order) {
+    try {
+      const results = await run(name);
+      if (results?.length) return { source: name, results };
     } catch (err) {
-      if (provider === 'tmdb') {
-        const wrapped = new Error(`TMDB 搜索失败：${err.message}`);
-        wrapped.status = 502;
+      lastError = err;
+      if (explicit) {
+        const wrapped = new Error(`${name === 'tmdb' ? 'TMDB' : name === 'douban' ? '豆瓣' : name === 'tvmaze' ? 'TVMaze' : '维基百科'} 搜索失败：${err.message}`);
+        wrapped.status = err.status === 400 ? 400 : 502;
         throw wrapped;
       }
     }
   }
-  const results = await searchWikipedia({ query, kind, year, language });
-  return { source: 'wikipedia', results };
+  if (lastError && order.length) {
+    const err = new Error('无法连接在线元数据服务，请检查网络或代理后重试');
+    err.status = 502;
+    throw err;
+  }
+  return { source: explicit ? provider : 'wikipedia', results: [] };
+}
+
+export async function fetchImage(url) {
+  const safeUrl = absoluteImage(url);
+  if (!safeUrl) {
+    const err = new Error('不支持的图片地址');
+    err.status = 400;
+    throw err;
+  }
+  let res;
+  try {
+    res = await fetch(safeUrl, {
+      headers: imageHeaders(safeUrl),
+      signal: AbortSignal.timeout(20000),
+    });
+  } catch {
+    throw new Error('无法连接封面图服务，请检查网络后重试');
+  }
+  if (!res.ok) throw new Error(`图片下载失败（${res.status}）`);
+  const buffer = Buffer.from(await res.arrayBuffer());
+  if (buffer.length > 15 * 1024 * 1024) throw new Error('图片过大');
+  const contentType = String(res.headers.get('content-type') || 'image/jpeg').split(';')[0];
+  if (!/^image\//.test(contentType)) throw new Error('不是图片');
+  return { buffer, contentType };
 }
 
 export async function downloadImage(url, { destDir, kind, id, type = 'poster' }) {
@@ -155,7 +264,7 @@ export async function downloadImage(url, { destDir, kind, id, type = 'poster' })
   let res;
   try {
     res = await fetch(safeUrl, {
-      headers: { 'User-Agent': USER_AGENT, Accept: 'image/*' },
+      headers: imageHeaders(safeUrl),
       signal: AbortSignal.timeout(20000),
     });
   } catch {

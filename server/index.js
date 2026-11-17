@@ -17,6 +17,7 @@ import { UserStore } from './users.js';
 import {
   downloadImage,
   downloadSubtitle,
+  fetchImage,
   searchMetadata,
   searchSubtitles,
 } from './metadata.js';
@@ -816,6 +817,22 @@ function createApp({ config, tools, library, users }) {
         return;
       }
 
+      if (pathname === '/api/metadata/image' && method === 'GET') {
+        requireAdmin(user);
+        try {
+          const image = await fetchImage(String(url.searchParams.get('url') || ''));
+          res.writeHead(200, {
+            'Content-Type': image.contentType,
+            'Content-Length': image.buffer.length,
+            'Cache-Control': 'private, max-age=86400',
+          });
+          res.end(image.buffer);
+        } catch (error) {
+          sendError(res, error.status || 502, error.message || '图片加载失败');
+        }
+        return;
+      }
+
       if (pathname === '/api/metadata/search' && method === 'GET') {
         requireAdmin(user);
         const query = String(url.searchParams.get('q') || '').trim();
@@ -867,10 +884,12 @@ function createApp({ config, tools, library, users }) {
             warning = warning || `封面保存失败：${err.message}`;
           }
         }
+        const overview = String(body.overview || '').trim();
         const metadata = library.setMetadata(kind, id, {
           title,
+          originalTitle: body.originalTitle,
           year: body.year,
-          overview: body.overview,
+          ...(overview ? { overview } : {}),
           posterPath: posterPath || undefined,
           backdropPath: backdropPath || undefined,
           source: body.source || 'manual',
@@ -889,8 +908,10 @@ function createApp({ config, tools, library, users }) {
           return;
         }
         const kind = item.kind === 'episode' ? 'series' : 'movie';
-        const title = item.kind === 'episode' ? (item.seriesTitle || item.title) : item.title;
         const show = item.kind === 'episode' ? library.getSeries(item.seriesId) : null;
+        const title = item.kind === 'episode'
+          ? (show?.originalTitle || item.seriesTitle || show?.title || item.title)
+          : (item.originalTitle || item.title);
         const result = await searchSubtitles({
           title,
           kind,
@@ -935,7 +956,7 @@ function createApp({ config, tools, library, users }) {
         requireAdmin(user);
         const body = await readJson(req, 64 * 1024);
         const next = { ...(config.metadata || {}) };
-        if (['auto', 'tmdb', 'wikipedia'].includes(body.provider)) next.provider = body.provider;
+        if (['auto', 'tmdb', 'tvmaze', 'douban', 'wikipedia'].includes(body.provider)) next.provider = body.provider;
         if (body.clearTmdbKey === true) next.tmdbApiKey = '';
         else if (typeof body.tmdbApiKey === 'string' && body.tmdbApiKey.trim()) {
           next.tmdbApiKey = body.tmdbApiKey.trim();

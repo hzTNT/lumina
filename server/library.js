@@ -940,6 +940,7 @@ export class Library {
     const poster = this.metadataPath(record.posterPath);
     const backdrop = this.metadataPath(record.backdropPath);
     entity.overview = String(record.overview || '').slice(0, 4000);
+    entity.originalTitle = String(record.originalTitle || '').slice(0, 200);
     if (record.year != null) entity.year = Number(record.year) || null;
     entity.metadataSource = record.source || 'manual';
     entity._metaVersion = Number(record.updatedAt) || 0;
@@ -980,6 +981,7 @@ export class Library {
     const bucket = kind === 'series' ? this.metadata.series : this.metadata.items;
     const record = { ...(bucket[id] || {}) };
     if (patch.title !== undefined) record.title = String(patch.title || '').trim().slice(0, 200);
+    if (patch.originalTitle !== undefined) record.originalTitle = String(patch.originalTitle || '').trim().slice(0, 200);
     if (patch.year !== undefined) {
       const year = Number(patch.year);
       record.year = Number.isInteger(year) && year >= 1800 && year <= 2200 ? year : null;

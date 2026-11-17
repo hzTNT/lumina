@@ -11,6 +11,7 @@
 
 # Media files
 /media/
+/media-test/
 
 # Debug artifacts and backups
 *.png

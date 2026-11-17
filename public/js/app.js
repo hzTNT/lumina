@@ -721,13 +721,15 @@ function metadataSettingsPanel() {
   const hasKey = Boolean(md.hasTmdbKey);
   return `<div class="panel">
     <h2>${icon('search')}网络元数据</h2>
-    <p class="hint">按片名联网搜索标题、简介和封面。未配置 TMDB Key 时使用维基百科，中文简介可用但封面覆盖有限；字幕来自 MySubs。</p>
+    <p class="hint">按片名联网搜索标题、简介和封面。自动模式优先 TMDB，其次 TVMaze（剧集）、豆瓣；封面来自在线海报，字幕来自 MySubs。</p>
     <div class="field-row">
       <label class="field-label">元数据来源
         <select class="field" id="metadata-provider">
-          <option value="auto" ${md.provider === 'auto' ? 'selected' : ''}>自动（优先 TMDB）</option>
-          <option value="wikipedia" ${md.provider === 'wikipedia' ? 'selected' : ''}>仅维基百科</option>
-          <option value="tmdb" ${md.provider === 'tmdb' ? 'selected' : ''}>仅 TMDB</option>
+          <option value="auto" ${md.provider === 'auto' ? 'selected' : ''}>自动（推荐）</option>
+          <option value="tmdb" ${md.provider === 'tmdb' ? 'selected' : ''}>TMDB（需 Key）</option>
+          <option value="tvmaze" ${md.provider === 'tvmaze' ? 'selected' : ''}>TVMaze（剧集）</option>
+          <option value="douban" ${md.provider === 'douban' ? 'selected' : ''}>豆瓣</option>
+          <option value="wikipedia" ${md.provider === 'wikipedia' ? 'selected' : ''}>维基百科</option>
         </select>
       </label>
       <label class="field-label">字幕语言
@@ -1694,6 +1696,19 @@ async function openMetadataDialog(kind, id) {
   searchMetadataModal();
 }
 
+function proxiedImageUrl(url) {
+  return url ? `/api/metadata/image?url=${encodeURIComponent(url)}` : '';
+}
+
+function metadataSourceLabel(source) {
+  return ({
+    tmdb: 'TMDB',
+    douban: '豆瓣',
+    tvmaze: 'TVMaze',
+    wikipedia: '维基百科',
+  })[source] || '在线元数据';
+}
+
 async function searchMetadataModal() {
   if (!metadataContext) return;
   const results = document.getElementById('metadata-results');
@@ -1713,17 +1728,17 @@ async function searchMetadataModal() {
     const data = await api(`/api/metadata/search?${params}`);
     metadataResults = data.results || [];
     note.textContent = metadataResults.length
-      ? `来源：${data.source === 'tmdb' ? 'TMDB' : '维基百科'} · ${metadataResults.length} 个候选`
+      ? `来源：${metadataSourceLabel(data.source)} · ${metadataResults.length} 个候选`
       : '没有找到候选。可以换个片名，或在设置中配置 TMDB Key。';
     if (!metadataResults.length) {
       results.innerHTML = `<div class="empty compact"><p class="empty-title">没有匹配结果</p><p>换个片名或年份再试。</p></div>`;
       return;
     }
     results.innerHTML = metadataResults.map((item, index) => `<article class="metadata-result">
-      <div class="metadata-poster">${item.posterUrl ? `<img src="${esc(item.posterUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : `<span>${icon('film')}</span>`}</div>
+      <div class="metadata-poster">${item.posterUrl ? `<img src="${esc(proxiedImageUrl(item.posterUrl))}" alt="" loading="lazy" referrerpolicy="no-referrer">` : `<span>${icon('film')}</span>`}</div>
       <div class="metadata-info">
         <h3>${esc(item.title)}</h3>
-        <p class="metadata-meta">${item.year ? `${item.year} 年 · ` : ''}${data.source === 'tmdb' ? 'TMDB' : '维基百科'}</p>
+        <p class="metadata-meta">${item.year ? `${item.year} 年 · ` : ''}${metadataSourceLabel(data.source)}</p>
         <p class="metadata-overview">${esc(item.overview || '暂无简介')}</p>
       </div>
       <button class="btn btn-primary btn-sm" data-apply-metadata="${index}">应用</button>
@@ -1749,6 +1764,7 @@ async function applyMetadataResult(index) {
         kind: metadataContext.kind,
         id: metadataContext.id,
         title: item.title,
+        originalTitle: item.originalTitle,
         year: item.year,
         overview: item.overview,
         posterUrl: item.posterUrl,

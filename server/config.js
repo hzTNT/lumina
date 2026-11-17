@@ -127,7 +127,7 @@ export function libraryPathForConfig(absPath) {
 }
 
 function normalizeMetadata(input = {}) {
-  const provider = ['auto', 'tmdb', 'wikipedia'].includes(input.provider) ? input.provider : 'auto';
+  const provider = ['auto', 'tmdb', 'douban', 'tvmaze', 'wikipedia'].includes(input.provider) ? input.provider : 'auto';
   const language = input.language === 'en' ? 'en' : 'zh';
   const subtitleLanguage = String(input.subtitleLanguage || 'zh').trim().slice(0, 12) || 'zh';
   return {

@@ -21,7 +21,7 @@
 - **独立观看进度**：每个账号保存自己的续播位置，换账号不会互相覆盖。
 - **个人资料**：所有账号都能修改显示名称和头像；成员修改出生日期需要管理员确认，避免绕过年龄限制。
 - **生日祝福**：注册时填写出生日期，生日当天登录会在首页收到一条可关闭的祝福横幅。
-- **在线元数据与字幕**：管理员可在详情页联网搜索标题、简介、封面，或从 MySubs 搜索并下载字幕；可选配置 TMDB API Key 获得更完整的中文海报。
+- **在线元数据与字幕**：管理员可在详情页联网搜索标题、简介、封面，或从 MySubs 搜索并下载字幕；支持豆瓣、TVMaze、维基百科和可选 TMDB。
 
 ## 快速开始
 
@@ -84,8 +84,8 @@
 这两项功能需要服务器能访问外网，并且只有管理员可以操作。
 
 - **匹配元数据**：进入电影/剧集详情页，点 **匹配元数据**，按片名和年份搜索。选中候选后会应用标题、年份、简介与封面；剧集标题会同步到所有集。
-  - 默认优先使用 **TMDB**（需要 API Key），搜索不到时回退到 **中文维基百科**。
-  - 在 **设置 → 网络元数据** 中填入 TMDB API Key，可选择仅维基百科或仅 TMDB。
+  - 默认优先使用 **TMDB**（配置 Key 后），其次 **TVMaze**（剧集）、**豆瓣**，最后回退到 **中文维基百科**。
+  - 在 **设置 → 网络元数据** 中可选择自动、TMDB、TVMaze、豆瓣或维基百科；豆瓣和 TVMaze 不需要 Key。
   - 下载的封面保存在 `data/meta-art/`，元数据覆盖记录在 `data/metadata.json`；重新扫描不会丢失。
 - **在线字幕**：在电影详情页点 **在线字幕**，或在剧集每集右侧点字幕按钮；选择语言后从 **MySubs** 下载 SRT，保存为视频同目录的 `.zh.srt` / `.en.srt`，播放器会自动识别。
   - 字幕源不需要 Key，但有限流；找不到字幕时可以换语言或多试几个片名。
@@ -105,7 +105,7 @@ lumina/
 │  ├─ library.js          扫描、媒体库、播放信息、HLS 分片、分级过滤
 │  ├─ users.js            账号、密码、会话、角色与年龄规则
 │  ├─ ratings.js          年龄分级解析与标签识别
-│  ├─ metadata.js         TMDB / 维基百科 / MySubs 在线资源
+│  ├─ metadata.js         TMDB / TVMaze / 豆瓣 / 维基百科 / MySubs 在线资源
 │  ├─ ffmpeg.js           ffprobe / ffmpeg 封装
 │  ├─ subtitles.js        字幕发现与 WebVTT 转换
 │  ├─ config.js           配置读写
@@ -179,7 +179,7 @@ HLS 分片会缓存在 `data/transcode/`，重复观看同一段不会重复转�
 
 - `host` 保持 `0.0.0.0` 才能被局域网其他设备访问。
 - `libraries` 是媒体库列表；`access` 为 `all` / `selected` / `admins`，`userIds` 在 `selected` 时生效，`minAge` 为成员最低年龄。
-- `metadata.provider` 为 `auto` / `tmdb` / `wikipedia`；`tmdbApiKey` 可留空，此时使用维基百科。Key 以明文保存在本机 `config.json`，不要提交到公开仓库。
+- `metadata.provider` 为 `auto` / `tmdb` / `tvmaze` / `douban` / `wikipedia`；`tmdbApiKey` 可留空，此时自动回退到 TVMaze、豆瓣和维基百科。Key 以明文保存在本机 `config.json`，不要提交到公开仓库。
 - `maxHeight` 控制转码最高分辨率；低性能机器可改为 `720`。
 - 修改 `port` 后记得同步防火墙规则。
 

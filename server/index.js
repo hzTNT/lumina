@@ -793,7 +793,7 @@ function createApp({ config, tools, library, users }) {
         }
         sendFile(req, res, art.file, {
           type: mimeFor(art.file),
-          cache: 'private, max-age=86400',
+          cache: 'private, no-cache',
         });
         return;
       }

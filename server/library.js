@@ -642,6 +642,7 @@ export class Library {
   clientItem(item) {
     const probe = this.getProbeData(item);
     const tracks = this.getSubtitleTracks(item);
+    const artV = `${item.mtime}-${item._metaVersion || 0}-${this.revision || 0}`;
     return {
       id: item.id,
       kind: item.kind,
@@ -674,9 +675,9 @@ export class Library {
       metadataSource: item.metadataSource || null,
       subtitleCount: tracks.length,
       hasProbe: Boolean(probe),
-      poster: `/api/art/${item.id}?type=poster&v=${item.mtime}-${item._metaVersion || 0}`,
-      backdrop: `/api/art/${item.id}?type=backdrop&v=${item.mtime}-${item._metaVersion || 0}`,
-      thumb: `/api/art/${item.id}?type=thumb&v=${item.mtime}-${item._metaVersion || 0}`,
+      poster: `/api/art/${item.id}?type=poster&v=${artV}`,
+      backdrop: `/api/art/${item.id}?type=backdrop&v=${artV}`,
+      thumb: `/api/art/${item.id}?type=thumb&v=${artV}`,
     };
   }
 
@@ -686,6 +687,7 @@ export class Library {
       .filter(Boolean)
       .sort(epCompare);
     if (canView) eps = eps.filter((ep) => canView(ep));
+    const artV = `${series.mtime}-${series._metaVersion || 0}-${this.revision || 0}`;
     return {
       id: series.id,
       kind: 'series',
@@ -703,8 +705,8 @@ export class Library {
       mtime: series.mtime,
       addedAt: series.addedAt || (series.mtime ? new Date(series.mtime).toISOString() : null),
       duration: Math.max(0, ...eps.map((ep) => ep.duration || 0)),
-      poster: `/api/art/${series.id}?type=poster&v=${series.mtime}-${series._metaVersion || 0}`,
-      backdrop: `/api/art/${series.id}?type=backdrop&v=${series.mtime}-${series._metaVersion || 0}`,
+      poster: `/api/art/${series.id}?type=poster&v=${artV}`,
+      backdrop: `/api/art/${series.id}?type=backdrop&v=${artV}`,
       episodes: eps.map((ep) => this.clientItem(ep)),
     };
   }
@@ -1295,7 +1297,7 @@ export class Library {
 
     const metaOwner = target?.kind === 'episode' ? this.series.get(target.seriesId) : (target || series);
     const metaFile = type === 'backdrop'
-      ? (metaOwner?._metaBackdrop || metaOwner?._metaPoster)
+      ? metaOwner?._metaBackdrop
       : (metaOwner?._metaPoster || metaOwner?._metaBackdrop);
     if (metaFile && fs.existsSync(metaFile)) return { file: metaFile, source: true };
 
@@ -1310,6 +1312,14 @@ export class Library {
       sidecar = type === 'poster' ? series._art : type === 'backdrop' ? series._backdrop : null;
     }
     if (sidecar && fs.existsSync(sidecar)) return { file: sidecar, source: true };
+
+    // A portrait poster is a better backdrop fallback than a video frame.
+    if (type === 'backdrop') {
+      const posterFallback = metaOwner?._metaPoster || (target ? target._art : series?._art);
+      if (posterFallback && fs.existsSync(posterFallback)) {
+        return { file: posterFallback, source: true };
+      }
+    }
 
     if (!this.tools.available) return null;
 

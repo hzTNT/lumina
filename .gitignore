@@ -1,0 +1,21 @@
+# Local runtime data (accounts, sessions, progress, ratings, favorites, cache)
+/data/
+/config.json
+
+# Bundled binaries and downloaded portable tools (too large for Git)
+/bin/
+/runtime/
+/.tools/
+/dist/
+*.zip
+
+# Media files
+/media/
+
+# Debug artifacts and backups
+*.png
+*.log
+*.backup.json
+*.tmp
+Thumbs.db
+.DS_Store

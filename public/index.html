@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#08090c">
+  <meta name="description" content="Lumina 微光影库 — 局域网家庭影院">
+  <title>Lumina 微光影库</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3CradialGradient id='g'%3E%3Cstop offset='0' stop-color='%23ffd89a'/%3E%3Cstop offset='1' stop-color='%23f0a63c'/%3E%3C/radialGradient%3E%3C/defs%3E%3Ccircle cx='32' cy='32' r='30' fill='%230b0d10'/%3E%3Ccircle cx='32' cy='32' r='16' fill='url(%23g)'/%3E%3Cg stroke='%23f5bd68' stroke-width='3' stroke-linecap='round'%3E%3Cpath d='M32 5v7M32 52v7M5 32h7M52 32h7M13 13l5 5M46 46l5 5M51 13l-5 5M18 46l-5 5'/%3E%3C/g%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+  <svg class="sprite" aria-hidden="true" focusable="false">
+    <symbol id="i-logo" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="4.2" fill="currentColor" stroke="none"/>
+      <g stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+        <path d="M12 1.8v3.1M12 19.1v3.1M1.8 12h3.1M19.1 12h3.1M4.8 4.8l2.2 2.2M17 17l2.2 2.2M19.2 4.8L17 7M7 17l-2.2 2.2"/>
+      </g>
+    </symbol>
+    <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.6 12 3l9 7.6"/><path d="M5.5 9.5V21h13V9.5"/><path d="M9.5 21v-6h5v6"/></symbol>
+    <symbol id="i-film" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/></symbol>
+    <symbol id="i-tv" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="13" rx="2.5"/><path d="M8 21h8M12 18v3"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
+    <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 20.3 4.7 13a4.7 4.7 0 0 1 6.6-6.7l.7.7.7-.7A4.7 4.7 0 0 1 19.3 13z"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2.4"/><circle cx="8" cy="17" r="2.4"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 4.5 4.5"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><rect x="7" y="5" width="3.6" height="14" rx="1" fill="currentColor" stroke="none"/><rect x="13.4" y="5" width="3.6" height="14" rx="1" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-back10" viewBox="0 0 24 24"><path d="M4.5 8.5A8 8 0 1 1 4 14"/><path d="M4.5 3.5v5h5"/><text x="12" y="16" text-anchor="middle" font-size="6.5" font-family="sans-serif" fill="currentColor" stroke="none">10</text></symbol>
+    <symbol id="i-forward10" viewBox="0 0 24 24"><path d="M19.5 8.5A8 8 0 1 0 20 14"/><path d="M19.5 3.5v5h-5"/><text x="12" y="16" text-anchor="middle" font-size="6.5" font-family="sans-serif" fill="currentColor" stroke="none">10</text></symbol>
+    <symbol id="i-volume" viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 5.5v13L7.5 14.5H4z"/><path d="M15.5 9a4.2 4.2 0 0 1 0 6M18 6.5a8 8 0 0 1 0 11"/></symbol>
+    <symbol id="i-mute" viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 5.5v13L7.5 14.5H4z"/><path d="m16 9 5 5M21 9l-5 5"/></symbol>
+    <symbol id="i-fullscreen" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></symbol>
+    <symbol id="i-exit-fullscreen" viewBox="0 0 24 24"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></symbol>
+    <symbol id="i-subtitles" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M6.5 14.5h5M14 14.5h3.5M6.5 11h3M12 11h5.5"/></symbol>
+    <symbol id="i-quality" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2.1" fill="#0b0d10"/><circle cx="15" cy="12" r="2.1" fill="#0b0d10"/><circle cx="8" cy="18" r="2.1" fill="#0b0d10"/></symbol>
+    <symbol id="i-pip" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5"/><rect x="12" y="11" width="6.5" height="5" rx="1"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+    <symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="M19 12H5M11 6l-6 6 6 6"/></symbol>
+    <symbol id="i-chevron-left" viewBox="0 0 24 24"><path d="m14.5 6-6 6 6 6"/></symbol>
+    <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="m9.5 6 6 6-6 6"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 6.7"/><path d="M20 4.5V11h-6.5"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7.5A2 2 0 0 1 5 5.5h4l2 2.5h8a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4.5h6V7M6 7l1 13h10l1-13M10 11v5M14 11v5"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v6M12 7.5v.1"/></symbol>
+    <symbol id="i-next" viewBox="0 0 24 24"><path d="M6 5.5v13l9-6.5z" fill="currentColor" stroke="none"/><path d="M18 5v14"/></symbol>
+    <symbol id="i-replay" viewBox="0 0 24 24"><path d="M4.5 11a7.5 7.5 0 1 1 2.2 5.8"/><path d="M4.5 5.5V11h5.5"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.6"/><path d="M4.5 20c.8-4 3.8-6 7.5-6s6.7 2 7.5 6"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M2.8 19c.7-3.5 3.2-5.2 6.2-5.2s5.5 1.7 6.2 5.2"/><path d="M16 5.2a3 3 0 0 1 0 5.6M18 13.8c2 .5 3.2 2.1 3.6 4.6"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="2.5"/><path d="M8.5 10V7.5a3.5 3.5 0 0 1 7 0V10M12 14v2.5"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 20 6v5.5c0 4.6-3.2 7.8-8 9.5-4.8-1.7-8-4.9-8-9.5V6z"/><path d="m8.5 12 2.3 2.3 4.7-4.6"/></symbol>
+    <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15.5" r="3.5"/><path d="m10.6 13.2 8-8M16 5.5l3 3M13.5 8.5l2.5 2.5"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4l11-11-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></symbol>
+    <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 8.5h3l1.5-2h7l1.5 2h3a1.5 1.5 0 0 1 1.5 1.5v8A1.5 1.5 0 0 1 20 19.5H4A1.5 1.5 0 0 1 2.5 18v-8A1.5 1.5 0 0 1 4 8.5z"/><circle cx="12" cy="13.5" r="3.5"/></symbol>
+    <symbol id="i-logout" viewBox="0 0 24 24"><path d="M10 4H5v16h5M14 8l4 4-4 4M9 12h9"/></symbol>
+  </svg>
+
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <a class="brand" href="#/home" aria-label="Lumina 首页">
+        <span class="brand-mark"><svg class="icon"><use href="#i-logo"/></svg></span>
+        <span class="brand-text"><strong>LUMINA</strong><small>微光影库</small></span>
+      </a>
+
+      <nav class="nav" aria-label="主导航">
+        <a class="nav-link" href="#/home" data-nav="home"><svg class="icon"><use href="#i-home"/></svg><span>首页</span></a>
+        <a class="nav-link" href="#/movies" data-nav="movies"><svg class="icon"><use href="#i-film"/></svg><span>电影</span><em id="nav-movie-count"></em></a>
+        <a class="nav-link" href="#/series" data-nav="series"><svg class="icon"><use href="#i-tv"/></svg><span>剧集</span><em id="nav-series-count"></em></a>
+        <a class="nav-link" href="#/continue" data-nav="continue"><svg class="icon"><use href="#i-clock"/></svg><span>继续观看</span></a>
+        <a class="nav-link" href="#/favorites" data-nav="favorites"><svg class="icon"><use href="#i-heart"/></svg><span>收藏</span><em id="nav-favorite-count"></em></a>
+        <div class="nav-sep"></div>
+        <a class="nav-link" href="#/settings" data-nav="settings"><svg class="icon"><use href="#i-settings"/></svg><span>设置</span></a>
+      </nav>
+
+      <div class="sidebar-foot">
+        <div class="server-state" id="server-state">
+          <span class="dot"></span>
+          <div><strong id="server-state-title">正在连接…</strong><small id="server-state-sub">Lumina</small></div>
+        </div>
+        <a class="sidebar-link" href="#/settings">媒体目录与转码设置</a>
+      </div>
+    </aside>
+
+    <div class="main">
+      <header class="topbar">
+        <a class="topbar-brand" href="#/home" aria-label="Lumina 首页">
+          <span class="brand-mark small"><svg class="icon"><use href="#i-logo"/></svg></span>
+          <strong>LUMINA</strong>
+        </a>
+        <label class="search" id="search-box">
+          <svg class="icon"><use href="#i-search"/></svg>
+          <input id="search-input" type="search" autocomplete="off" spellcheck="false" placeholder="搜索电影、剧集…" aria-label="搜索">
+          <kbd>/</kbd>
+        </label>
+        <div class="topbar-actions">
+          <span class="admin-only" data-admin-only>
+            <button class="status-pill" id="scan-pill" data-action="scan" title="点击重新扫描媒体库">
+              <span class="dot"></span><span id="scan-label">就绪</span>
+            </button>
+            <button class="icon-btn" data-action="scan" title="重新扫描媒体库" aria-label="重新扫描媒体库">
+              <svg class="icon"><use href="#i-refresh"/></svg>
+            </button>
+          </span>
+          <div class="account-wrap">
+            <button class="account-btn" id="account-btn" aria-haspopup="menu" aria-expanded="false">
+              <span class="avatar" id="account-avatar">?</span>
+              <span class="account-name" id="account-name">登录</span>
+              <svg class="icon chevron"><use href="#i-chevron-right"/></svg>
+            </button>
+            <div class="account-menu" id="account-menu" role="menu" hidden>
+              <div id="account-menu-body"></div>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <div id="birthday-banner" class="birthday-banner" hidden></div>
+
+      <main id="view" class="view" tabindex="-1"></main>
+    </div>
+  </div>
+
+  <nav class="mobile-nav" id="mobile-nav" aria-label="移动端导航">
+    <a href="#/home" data-nav="home"><svg class="icon"><use href="#i-home"/></svg><span>首页</span></a>
+    <a href="#/movies" data-nav="movies"><svg class="icon"><use href="#i-film"/></svg><span>电影</span></a>
+    <a href="#/series" data-nav="series"><svg class="icon"><use href="#i-tv"/></svg><span>剧集</span></a>
+    <a href="#/favorites" data-nav="favorites"><svg class="icon"><use href="#i-heart"/></svg><span>收藏</span></a>
+    <a href="#/settings" data-nav="settings"><svg class="icon"><use href="#i-settings"/></svg><span>设置</span></a>
+  </nav>
+
+  <div id="auth-overlay" class="auth-overlay" hidden>
+    <div class="auth-card">
+      <div class="auth-brand">
+        <span class="brand-mark"><svg class="icon"><use href="#i-logo"/></svg></span>
+        <div><strong>LUMINA</strong><small>微光影库 · 家庭影院</small></div>
+      </div>
+      <div id="auth-panel" class="auth-panel"></div>
+    </div>
+  </div>
+
+  <div id="player-root"></div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="/vendor/hls.min.js"></script>
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+{
+  "name": "lumina",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A lightweight Jellyfin-like home media server for your LAN",
+  "type": "module",
+  "scripts": {
+    "start": "node server/index.js",
+    "scan": "node server/scan-cli.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

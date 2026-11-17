@@ -24,6 +24,8 @@ import {
 } from './subtitles.js';
 import { detectAgeRating, normalizeAgeRating, ratingLabel } from './ratings.js';
 
+const HLS_CACHE_VERSION = 'v2';
+
 const SKIP_DIRS = new Set([
   '$recycle.bin', 'system volume information', 'node_modules', '.git', '.svn',
   '@eadir', '#recycle', 'lost+found', 'data', 'bin', 'runtime', 'public', 'server',
@@ -1406,7 +1408,7 @@ export class Library {
     for (let n = 0; n < count; n += 1) {
       const dur = Math.min(segmentSeconds, duration - n * segmentSeconds);
       lines.push(`#EXTINF:${dur.toFixed(3)},`);
-      lines.push(`${n}.ts?q=${q}`);
+      lines.push(`${n}.ts?q=${q}&v=${HLS_CACHE_VERSION}`);
     }
     lines.push('#EXT-X-ENDLIST');
     return { playlist: lines.join('\n'), q, duration };
@@ -1441,7 +1443,7 @@ export class Library {
       throw err;
     }
     const segDuration = Math.min(segmentSeconds, duration - start);
-    const out = path.join(this.transcodeDir, id, String(q), `${n}.ts`);
+    const out = path.join(this.transcodeDir, id, HLS_CACHE_VERSION, String(q), `${n}.ts`);
     const existing = await fs.promises.stat(out).catch(() => null);
     if (existing && existing.size > 0) return out;
 

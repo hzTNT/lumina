@@ -207,6 +207,9 @@ export class MediaTools {
       '-c:a', 'aac',
       '-b:a', '160k',
       '-ac', '2',
+      '-muxdelay', '0',
+      '-muxpreload', '0',
+      '-output_ts_offset', start.toFixed(3),
       '-f', 'mpegts',
       '-y', tmp,
     ], { timeout: 180000 });

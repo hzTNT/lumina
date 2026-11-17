@@ -2456,6 +2456,12 @@ function bindEvents() {
       if (!player?.visible) renderRoute({ scroll: false });
     },
   });
+
+  // Android/iOS back gesture: while the player is open it has its own
+  // history entry, so popstate should close it instead of leaving the page.
+  window.addEventListener('popstate', () => {
+    if (player?.visible) player.close({ fromHistory: true });
+  });
 }
 
 if (!location.hash) history.replaceState(null, '', '#/home');

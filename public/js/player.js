@@ -36,6 +36,7 @@ export class Player {
     this.dragValue = 0;
     this.lastReportAt = 0;
     this.menuOpen = false;
+    this.historyPushed = false;
 
     this.build();
     this.bind();
@@ -264,6 +265,12 @@ export class Player {
 
   async open(id, { autoplay = true } = {}) {
     if (!id) return;
+    // Keep a history entry while the player is open so the phone's back
+    // gesture closes the player instead of leaving the page.
+    if (!this.historyPushed) {
+      history.pushState({ ...(history.state || {}), luminaPlayer: true }, '', location.href);
+      this.historyPushed = true;
+    }
     this.loadToken += 1;
     const token = this.loadToken;
     this.visible = true;
@@ -840,8 +847,10 @@ export class Player {
 
   // ------------------------------------------------------------------ close
 
-  close() {
+  close({ fromHistory = false } = {}) {
     if (!this.visible) return;
+    const popHistory = !fromHistory && this.historyPushed && history.state?.luminaPlayer;
+    this.historyPushed = false;
     this.loadToken += 1;
     this.report(true);
     this.destroyHls();
@@ -867,6 +876,7 @@ export class Player {
     this.currentId = null;
     this.playData = null;
     this.onClose();
+    if (popHistory) history.back();
   }
 
   // ---------------------------------------------------------------- keyboard

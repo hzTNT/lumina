@@ -1,0 +1,51 @@
+name: Build portable release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build portable package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force runtime, bin, dist | Out-Null
+
+          # Node.js runtime
+          Invoke-WebRequest -Uri 'https://nodejs.org/dist/v26.13.1/win-x64/node.exe' -OutFile 'runtime\node.exe'
+
+          # FFmpeg essentials
+          Invoke-WebRequest -Uri 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip' -OutFile 'ffmpeg.zip'
+          Expand-Archive -Path 'ffmpeg.zip' -DestinationPath 'ffmpeg' -Force
+          $ffmpeg = Get-ChildItem 'ffmpeg' -Recurse -Filter 'ffmpeg.exe' | Select-Object -First 1
+          $ffprobe = Get-ChildItem 'ffmpeg' -Recurse -Filter 'ffprobe.exe' | Select-Object -First 1
+          Copy-Item $ffmpeg.FullName 'bin\ffmpeg.exe'
+          Copy-Item $ffprobe.FullName 'bin\ffprobe.exe'
+
+          # Keep the demo media that makes first run useful.
+          New-Item -ItemType Directory -Force 'media\电影', 'media\剧集\示例剧集\Season 01' | Out-Null
+          & '.\bin\ffmpeg.exe' -y -f lavfi -i 'testsrc2=size=1280x720:rate=30' -f lavfi -i 'sine=frequency=440:sample_rate=48000' -t 10 -c:v libx264 -preset veryfast -pix_fmt yuv420p -c:a aac -shortest 'media\电影\示例影片 (2024).mp4'
+          Copy-Item 'media\电影\示例影片 (2024).mp4' 'media\剧集\示例剧集\Season 01\示例剧集 - S01E01.mp4'
+          Copy-Item 'media\电影\示例影片 (2024).mp4' 'media\剧集\示例剧集\Season 01\示例剧集 - S01E02.mp4'
+
+          # Assemble the portable tree next to the binaries.
+          New-Item -ItemType Directory -Force 'dist\Lumina' | Out-Null
+          Copy-Item 'server', 'public', 'tools', 'runtime', 'bin', 'media', 'start.bat', 'README.md', 'package.json', '打包说明.txt' -Destination 'dist\Lumina' -Recurse
+          Compress-Archive -Path 'dist\Lumina\*' -DestinationPath 'dist\Lumina-portable-2026-11-17.zip' -CompressionLevel Optimal
+
+          Get-Item 'dist\Lumina-portable-2026-11-17.zip' | Select-Object Name, Length
+          Get-FileHash 'dist\Lumina-portable-2026-11-17.zip' -Algorithm SHA256 | Select-Object Hash
+
+      - name: Upload release asset
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload v1.0.0 dist\Lumina-portable-2026-11-17.zip --clobber

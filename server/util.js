@@ -151,6 +151,16 @@ export function parseFilename(fileName) {
   }
 
   const isEpisode = episode !== null;
+  // Some releases prefix the file with a catalog number and put the real title
+  // in the first bracket: "06[哆啦a梦剧场版：大雄的宇宙小战争][...]". Strip the
+  // numbering and the common "剧场版：" prefix so the title is not just "06".
+  const bracketTitleMatch = base.match(/^\d{1,3}\s*[\[【]([^\]】]+)[\]】]/);
+  let bracketTitle = '';
+  if (bracketTitleMatch) {
+    const raw = bracketTitleMatch[1].trim();
+    const withoutEdition = raw.split(/[：:]/).pop().trim();
+    bracketTitle = cleanTitle(withoutEdition || raw);
+  }
   const seriesGuess = markerStart > 0 ? cleanTitle(base.slice(0, markerStart)) : '';
   let episodeTitle = markerEnd > 0 ? cleanTitle(base.slice(markerEnd)) : '';
 
@@ -158,7 +168,9 @@ export function parseFilename(fileName) {
   if (!episodeTitle || /^\d+$/.test(episodeTitle)) episodeTitle = '';
 
   let movieTitle = '';
-  if (!isEpisode) {
+  if (!isEpisode && bracketTitle) {
+    movieTitle = bracketTitle;
+  } else if (!isEpisode) {
     let cutAt = base.length;
     if (yearIndex > 0) {
       const prefix = base.slice(0, yearIndex).replace(/[\s._\-(\[]+$/, '');

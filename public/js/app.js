@@ -896,6 +896,28 @@ function metadataSettingsPanel() {
       ${hasKey ? `<button class="btn btn-ghost btn-sm" data-action="clear-tmdb-key">${icon('trash')}清除 Key</button>` : ''}
       <span class="badge ${hasKey ? 'good' : 'warn'}">${hasKey ? 'TMDB 已配置' : '未配置 TMDB'}</span>
     </div>
+    <div class="metadata-batch">
+      <h3>${icon('spark')}批量匹配</h3>
+      <p class="hint">为缺少元数据的影片自动搜索并应用标题、简介和封面。默认只补全空白项，不覆盖已有元数据。</p>
+      <div class="field-row batch-controls">
+        <label class="field-label">范围
+          <select class="field select-sm" id="batch-metadata-kind">
+            <option value="all">电影和剧集</option>
+            <option value="movie">仅电影</option>
+            <option value="series">仅剧集</option>
+          </select>
+        </label>
+        <label class="field-label">媒体库
+          <select class="field select-sm" id="batch-metadata-library">
+            <option value="all">全部媒体库</option>
+            ${mediaLibraries([...state.movies, ...state.series]).map((library) => `<option value="${esc(library.id)}">${esc(library.name)}</option>`).join('')}
+          </select>
+        </label>
+        <label class="check-field batch-overwrite"><input type="checkbox" id="batch-metadata-overwrite">覆盖已有元数据</label>
+        <button class="btn btn-primary btn-sm" data-action="batch-metadata">${icon('search')}开始批量匹配</button>
+      </div>
+      <p class="hint" id="batch-metadata-note">每次最多处理 100 项；匹配结果按片名和年份筛选，找不到可靠候选时会跳过。</p>
+    </div>
   </div>`;
 }
 
@@ -1823,6 +1845,7 @@ let metadataContext = null;
 let metadataResults = [];
 let subtitleContext = null;
 let subtitleResults = [];
+let batchRun = null;
 
 function closeDialogs() {
   document.getElementById('metadata-modal')?.remove();
@@ -1969,6 +1992,176 @@ async function applyMetadataResult(index) {
       button.textContent = '应用';
     }
   }
+}
+
+function normalizeMetaTitle(value) {
+  return String(value || '').normalize('NFKC').toLowerCase().replace(/[\s\p{P}\p{S}]+/gu, '');
+}
+
+function pickBestMetadata(entity, results) {
+  const title = normalizeMetaTitle(entity.title);
+  const entityYear = Number(entity.year) || 0;
+  if (!title || (/^\d+$/.test(title) && title.length < 4)) return null;
+  let best = null;
+  let bestScore = 0;
+  for (const item of results || []) {
+    const names = [item.title, item.originalTitle].filter(Boolean).map(normalizeMetaTitle);
+    let score = 0;
+    if (names.some((name) => name === title)) score = 60;
+    else if (title.length >= 4 && names.some((name) => name.length >= 4 && (name.includes(title) || title.includes(name)))) score = 20;
+    else continue;
+    const itemYear = Number(item.year) || 0;
+    if (itemYear && entityYear) {
+      const diff = Math.abs(itemYear - entityYear);
+      if (diff === 0) score += 25;
+      else if (diff === 1) score += 8;
+      else if (diff > 2) score -= 35;
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      best = item;
+    }
+  }
+  return bestScore >= 55 ? best : null;
+}
+
+function updateBatchDialog(run) {
+  const status = document.getElementById('batch-status');
+  if (!status) return;
+  const done = run.applied + run.skipped + run.failed;
+  status.textContent = run.active
+    ? (run.current ? `正在匹配：${run.current}` : '准备中…')
+    : (run.cancelled ? '已取消批量匹配' : '批量匹配完成');
+  const fill = document.getElementById('batch-bar-fill');
+  if (fill) fill.style.width = `${run.total ? Math.round((done / run.total) * 100) : 0}%`;
+  const stats = document.getElementById('batch-stats');
+  if (stats) stats.textContent = `${done} / ${run.total} 项 · 成功 ${run.applied} · 跳过 ${run.skipped} · 失败 ${run.failed}`;
+  const log = document.getElementById('batch-log');
+  if (log) log.innerHTML = run.log.slice(-4).map((line) => `<div>${esc(line)}</div>`).join('');
+  const cancel = document.querySelector('[data-batch-cancel]');
+  const close = document.querySelector('[data-batch-close]');
+  if (cancel) cancel.hidden = !run.active;
+  if (close) close.hidden = run.active;
+}
+
+function closeBatchDialog() {
+  if (batchRun?.active) batchRun.cancelled = true;
+  document.getElementById('batch-metadata-modal')?.remove();
+  document.body.classList.remove('modal-open');
+  if (!batchRun?.active) renderRoute({ scroll: false });
+}
+
+async function startBatchMetadata() {
+  if (batchRun?.active) {
+    showToast('已有批量匹配任务正在运行', 'error');
+    return;
+  }
+  const kind = document.getElementById('batch-metadata-kind')?.value || 'all';
+  const libraryId = document.getElementById('batch-metadata-library')?.value || 'all';
+  const overwrite = Boolean(document.getElementById('batch-metadata-overwrite')?.checked);
+  const allItems = [
+    ...state.movies.map((item) => ({ ...item, kind: 'movie' })),
+    ...state.series.map((item) => ({ ...item, kind: 'series' })),
+  ];
+  const candidates = allItems.filter((item) => {
+    if (kind !== 'all' && item.kind !== kind) return false;
+    if (libraryId !== 'all' && item.libraryId !== libraryId) return false;
+    if (!overwrite && (item.metadataSource || item.overview)) return false;
+    const title = normalizeMetaTitle(item.title);
+    if (!title || (/^\d+$/.test(title) && title.length < 4)) return false;
+    return true;
+  });
+  if (!candidates.length) {
+    showToast('没有需要匹配元数据的影片', 'info');
+    return;
+  }
+  const runItems = candidates.slice(0, 100);
+  if (runItems.length < candidates.length) {
+    showToast(`本次最多处理 100 项，剩余 ${candidates.length - runItems.length} 项可再次运行`, 'info');
+  }
+
+  batchRun = {
+    active: true,
+    cancelled: false,
+    total: runItems.length,
+    applied: 0,
+    skipped: 0,
+    failed: 0,
+    current: '',
+    log: [],
+  };
+  const body = `<div class="batch-progress">
+    <p class="hint" id="batch-status">准备中…</p>
+    <div class="batch-bar" aria-hidden="true"><span id="batch-bar-fill"></span></div>
+    <p class="batch-stats" id="batch-stats">0 / ${runItems.length} 项</p>
+    <div class="batch-log" id="batch-log"></div>
+    <div class="settings-actions">
+      <button class="btn btn-ghost btn-sm" type="button" data-batch-cancel>${icon('close')}取消</button>
+      <button class="btn btn-primary btn-sm" type="button" data-batch-close hidden>完成</button>
+    </div>
+  </div>`;
+  const wrap = dialogShell('batch-metadata-modal', '批量匹配元数据', body);
+  wrap.addEventListener('click', (event) => {
+    if (event.target.closest('[data-batch-cancel]')) {
+      if (batchRun) batchRun.cancelled = true;
+      updateBatchDialog(batchRun);
+      return;
+    }
+    if (event.target.closest('[data-batch-close]') || event.target.closest('[data-close-dialog]')) closeBatchDialog();
+  });
+
+  for (const item of runItems) {
+    if (batchRun.cancelled) break;
+    batchRun.current = item.title;
+    updateBatchDialog(batchRun);
+    try {
+      const params = new URLSearchParams({ kind: item.kind === 'series' ? 'series' : 'movie', q: item.title });
+      if (item.year) params.set('year', String(item.year));
+      const data = await api(`/api/metadata/search?${params}`);
+      const best = pickBestMetadata(item, data.results || []);
+      if (!best) {
+        batchRun.skipped += 1;
+        batchRun.log.push(`跳过：${item.title}`);
+        updateBatchDialog(batchRun);
+        continue;
+      }
+      await api('/api/metadata/apply', {
+        method: 'POST',
+        body: JSON.stringify({
+          kind: item.kind,
+          id: item.id,
+          title: best.title,
+          originalTitle: best.originalTitle,
+          year: best.year,
+          overview: best.overview,
+          posterUrl: best.posterUrl,
+          backdropUrl: best.backdropUrl,
+          source: best.provider,
+          externalId: best.externalId,
+          keepEpisodeTitles: item.kind === 'series',
+        }),
+      });
+      batchRun.applied += 1;
+      batchRun.log.push(`已应用：${item.title} → ${best.title}`);
+    } catch (err) {
+      batchRun.failed += 1;
+      batchRun.log.push(`失败：${item.title}（${err.message || '未知错误'}）`);
+    }
+    updateBatchDialog(batchRun);
+    await new Promise((resolve) => setTimeout(resolve, 280));
+  }
+
+  batchRun.active = false;
+  batchRun.current = '';
+  updateBatchDialog(batchRun);
+  try {
+    const library = await api('/api/library');
+    applyLibrary(library);
+  } catch {
+    // Ignore refresh failure; the batch result is already persisted.
+  }
+  showToast(`批量匹配完成：成功 ${batchRun.applied}，跳过 ${batchRun.skipped}，失败 ${batchRun.failed}`);
+  if (!document.getElementById('batch-metadata-modal')) await renderRoute({ scroll: false });
 }
 
 async function openSubtitleDialog(itemId) {
@@ -2168,6 +2361,7 @@ async function handleAction(element) {
   if (action === 'open-subtitles') return openSubtitleDialog(element.dataset.id);
   if (action === 'save-metadata-settings') return saveMetadataSettings();
   if (action === 'clear-tmdb-key') return clearTmdbKey();
+  if (action === 'batch-metadata') return startBatchMetadata();
   if (action === 'add-library') return addLibrary();
   if (action === 'remove-library') return removeLibrary(Number(element.dataset.index));
   if (action === 'save-libraries') return saveLibraries();

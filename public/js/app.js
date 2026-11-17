@@ -56,6 +56,10 @@ const state = {
   libraryRevision: 0,
   favorites: [],
   favoritesLoaded: false,
+  sortMovies: localStorage.getItem('lumina.sort.movies') || 'recent',
+  sortSeries: localStorage.getItem('lumina.sort.series') || 'recent',
+  filterMovies: localStorage.getItem('lumina.filter.movies') || 'all',
+  filterSeries: localStorage.getItem('lumina.filter.series') || 'all',
   moviesById: new Map(),
   seriesById: new Map(),
   episodesById: new Map(),
@@ -115,6 +119,69 @@ function libraryAgeOptions(selected) {
     [16, '16 岁以上'],
     [18, '18 岁以上'],
   ].map(([value, label]) => `<option value="${value}" ${Number(selected) === value ? 'selected' : ''}>${label}</option>`).join('');
+}
+
+const SORT_OPTIONS = [
+  { value: 'recent', label: '最近添加' },
+  { value: 'title', label: '标题' },
+  { value: 'year', label: '年份（新→旧）' },
+  { value: 'duration', label: '时长（长→短）' },
+];
+
+function sortOptions(selected) {
+  const value = SORT_OPTIONS.some((option) => option.value === selected) ? selected : 'recent';
+  return SORT_OPTIONS.map((option) => `<option value="${option.value}" ${option.value === value ? 'selected' : ''}>${option.label}</option>`).join('');
+}
+
+function sortMedia(items, sort) {
+  const list = [...items];
+  switch (sort) {
+    case 'title':
+      list.sort((a, b) => String(a.title || '').localeCompare(String(b.title || ''), 'zh-CN', { numeric: true, sensitivity: 'base' }));
+      break;
+    case 'year':
+      list.sort((a, b) => (Number(b.year) || 0) - (Number(a.year) || 0) || String(a.title || '').localeCompare(String(b.title || ''), 'zh-CN'));
+      break;
+    case 'duration':
+      list.sort((a, b) => (Number(b.duration) || 0) - (Number(a.duration) || 0) || String(a.title || '').localeCompare(String(b.title || ''), 'zh-CN'));
+      break;
+    default:
+      list.sort((a, b) => (Number(b.mtime) || 0) - (Number(a.mtime) || 0) || String(a.title || '').localeCompare(String(b.title || ''), 'zh-CN'));
+  }
+  return list;
+}
+
+function mediaLibraries(items) {
+  const found = new Map();
+  for (const item of items) {
+    if (item.libraryId && !found.has(item.libraryId)) {
+      found.set(item.libraryId, item.libraryName || '媒体库');
+    }
+  }
+  return [...found].map(([id, name]) => ({ id, name }));
+}
+
+function browseItems(items, kind) {
+  const sortKey = kind === 'series' ? 'sortSeries' : 'sortMovies';
+  const filterKey = kind === 'series' ? 'filterSeries' : 'filterMovies';
+  const libraries = mediaLibraries(items);
+  let selected = state[filterKey] || 'all';
+  if (selected !== 'all' && !libraries.some((library) => library.id === selected)) selected = 'all';
+  state[filterKey] = selected;
+  const filtered = selected === 'all' ? items : items.filter((item) => item.libraryId === selected);
+  const sorted = sortMedia(filtered, state[sortKey]);
+  const chips = `<div class="library-filter" role="group" aria-label="按媒体库分类">
+    <button type="button" class="filter-chip ${selected === 'all' ? 'active' : ''}" data-filter-kind="${kind}" data-filter-library="all" aria-pressed="${selected === 'all'}">全部<span>${items.length}</span></button>
+    ${libraries.length > 1 ? libraries.map((library) => {
+      const count = items.filter((item) => item.libraryId === library.id).length;
+      return `<button type="button" class="filter-chip ${selected === library.id ? 'active' : ''}" data-filter-kind="${kind}" data-filter-library="${esc(library.id)}" aria-pressed="${selected === library.id}">${esc(library.name)}<span>${count}</span></button>`;
+    }).join('') : ''}
+  </div>`;
+  const toolbar = `<div class="browse-toolbar">
+    ${chips}
+    <label class="sort-control"><span>排序</span><select class="field select-sm" data-sort-kind="${kind}" aria-label="视频排序">${sortOptions(state[sortKey])}</select></label>
+  </div>`;
+  return { items: sorted, selected, libraries, toolbar };
 }
 
 // --------------------------------------------------------------------- utils
@@ -394,19 +461,29 @@ function renderHome() {
 // --------------------------------------------------------------------- movies
 
 function renderMovies() {
-  const head = `<div class="page-head"><h1>电影</h1><p>${state.movies.length} 部影片</p></div>`;
+  const browse = browseItems(state.movies, 'movies');
+  const count = browse.selected === 'all' ? `${browse.items.length} 部影片` : `${browse.items.length} / ${state.movies.length} 部影片`;
+  const head = `<div class="page-head"><h1>电影</h1><p>${count}</p></div>`;
   if (!state.movies.length) {
     return `${head}${emptyView({ title: '还没有电影', text: '把电影文件放进媒体目录，然后重新扫描媒体库。' })}`;
   }
-  return `${head}<div class="grid">${state.movies.map(posterCard).join('')}</div>`;
+  if (!browse.items.length) {
+    return `${head}${browse.toolbar}${emptyView({ title: '这个媒体库还没有电影', text: '切换到其他分类，或把电影放进这个媒体库后重新扫描。' })}`;
+  }
+  return `${head}${browse.toolbar}<div class="grid">${browse.items.map(posterCard).join('')}</div>`;
 }
 
 function renderSeriesList() {
-  const head = `<div class="page-head"><h1>剧集</h1><p>${state.series.length} 部剧集 · ${state.stats.episodes || 0} 集</p></div>`;
+  const browse = browseItems(state.series, 'series');
+  const count = browse.selected === 'all' ? `${browse.items.length} 部剧集 · ${state.stats.episodes || 0} 集` : `${browse.items.length} / ${state.series.length} 部剧集`;
+  const head = `<div class="page-head"><h1>剧集</h1><p>${count}</p></div>`;
   if (!state.series.length) {
     return `${head}${emptyView({ title: '还没有剧集', text: '把剧集放进媒体目录，Lumina 会按文件夹和文件名自动识别季与集。' })}`;
   }
-  return `${head}<div class="grid">${state.series.map(posterCard).join('')}</div>`;
+  if (!browse.items.length) {
+    return `${head}${browse.toolbar}${emptyView({ title: '这个媒体库还没有剧集', text: '切换到其他分类，或把剧集放进这个媒体库后重新扫描。' })}`;
+  }
+  return `${head}${browse.toolbar}<div class="grid">${browse.items.map(posterCard).join('')}</div>`;
 }
 
 function renderContinue() {
@@ -2341,6 +2418,16 @@ function bindEvents() {
   });
 
   view.addEventListener('click', (event) => {
+    const libraryFilter = event.target.closest('[data-filter-library]');
+    if (libraryFilter) {
+      event.preventDefault();
+      const kind = libraryFilter.dataset.filterKind === 'series' ? 'series' : 'movies';
+      const key = kind === 'series' ? 'filterSeries' : 'filterMovies';
+      state[key] = libraryFilter.dataset.filterLibrary || 'all';
+      localStorage.setItem(`lumina.filter.${kind}`, state[key]);
+      renderRoute({ scroll: false });
+      return;
+    }
     const favorite = event.target.closest('[data-favorite]');
     if (favorite) {
       event.preventDefault();
@@ -2398,6 +2485,15 @@ function bindEvents() {
   });
 
   view.addEventListener('change', async (event) => {
+    const sort = event.target.closest('[data-sort-kind]');
+    if (sort) {
+      const kind = sort.dataset.sortKind === 'series' ? 'series' : 'movies';
+      const key = kind === 'series' ? 'sortSeries' : 'sortMovies';
+      state[key] = SORT_OPTIONS.some((option) => option.value === sort.value) ? sort.value : 'recent';
+      localStorage.setItem(`lumina.sort.${kind}`, state[key]);
+      renderRoute({ scroll: false });
+      return;
+    }
     if (event.target.id === 'profile-avatar-input') {
       const file = event.target.files?.[0];
       if (!file) return;

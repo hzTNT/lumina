@@ -3871,3 +3871,73 @@ body.modal-open { overflow: hidden; }
   .metadata-overview { -webkit-line-clamp: 3; }
   .dialog-inline { padding: 12px 16px 2px; }
 }
+
+/* ---- browse toolbar: library filter + sorting ---- */
+.browse-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 14px 0 20px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.025);
+}
+.library-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.library-filter::-webkit-scrollbar { display: none; }
+.library-filter:empty { display: none; }
+.filter-chip {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: 0 0 auto;
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 0.16s ease, border-color 0.16s ease, background 0.16s ease;
+}
+.filter-chip:hover { color: var(--text); border-color: var(--line-strong); background: rgba(255, 255, 255, 0.045); }
+.filter-chip.active { color: var(--accent-ink); background: var(--accent); border-color: transparent; font-weight: 600; }
+.filter-chip > span { opacity: 0.62; font-size: 11px; font-variant-numeric: tabular-nums; }
+.filter-chip.active > span { opacity: 0.75; }
+.sort-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.sort-control .field {
+  width: auto;
+  min-width: 128px;
+  height: 34px;
+  padding-top: 0;
+  padding-bottom: 0;
+  flex: 0 0 auto;
+}
+
+@media (max-width: 600px) {
+  .browse-toolbar { flex-wrap: wrap; padding: 10px; }
+  .library-filter { flex-basis: 100%; }
+  .sort-control { width: 100%; margin-left: 0; justify-content: space-between; }
+  .sort-control .field { flex: 1 1 auto; min-width: 0; }
+}
